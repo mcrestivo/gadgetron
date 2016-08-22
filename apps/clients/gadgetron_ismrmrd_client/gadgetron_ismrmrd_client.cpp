@@ -1338,7 +1338,7 @@ public:
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*acq.getHead().sample_time_us*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us);
+                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)/0.79;
             }
 
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
@@ -1441,7 +1441,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*acq.getHead().sample_time_us*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us);
+            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)/0.79;
         }
 
         if (data_elements) {
@@ -1775,6 +1775,33 @@ int main(int argc, char **argv)
                 }
             } else {
                 std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << std::endl; 
+            }
+
+            if (compression_tolerance > 0.0) {
+                ISMRMRD::Compression c;
+                if (use_zfp_compression) {
+                    c.compressionAlgorithm = "ZFP";
+                } else {
+                    c.compressionAlgorithm = "NHLBI";
+                }
+                c.compressionTolerance = compression_tolerance;
+                c.compressionSigmaReference = 1.0;
+                c.compressionDwellTimeReference_us = 0.0;
+                if (noise_stats.status) {
+                    c.compressionSigmaReference = noise_stats.sigma_min;
+                    c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
+                }
+                if (!h.acquisitionSystemInformation) {
+                    ISMRMRD::AcquisitionSystemInformation si;
+                    si.compression = c;
+                    h.acquisitionSystemInformation = si;
+                } else {
+                    h.acquisitionSystemInformation().compression = c;
+                }
+
+                std::stringstream ss;
+                ISMRMRD::serialize(h,ss);
+                xml_config = ss.str();
             }
         }
     }
