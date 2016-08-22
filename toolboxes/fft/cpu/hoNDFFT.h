@@ -49,6 +49,8 @@ template<> struct fftw_types<double>{
 
         static hoNDFFT<T>* instance(); 
 
+		void dct(float* data_ptr, int N, int chunks, int sign);
+
         void fft(hoNDArray< ComplexType >* input, unsigned int dim_to_transform)
         {
             //-1 refers to the sign of the transform, -1 for FFTW_FORWARD

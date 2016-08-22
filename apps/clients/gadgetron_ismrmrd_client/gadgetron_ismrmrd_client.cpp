@@ -38,8 +38,12 @@
 #include <thread>
 #include <chrono>
 #include <condition_variable>
+#include <random>
 
 #include "NHLBICompression.h"
+#include "hoNDFFT.h"
+#include "hoNDArray_fileio.h"
+#include "fwht.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include "zfp/zfp.h"
@@ -72,7 +76,9 @@ struct NoiseStatistics
     float sigma_min;
     float sigma_max;
     float sigma_mean;
+    float sigma_rms;
     float noise_dwell_time_us;
+	float relative_receiver_noise_bw;
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -314,7 +320,7 @@ public:
     }
 
     std::string s(buf);
-    std::cout << s;
+    //std::cout << s;
     delete[] buf;
   }  
 };
@@ -1293,17 +1299,19 @@ public:
 
 
         if (data_elements) {
-            std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels*acq.getHead().number_of_samples*2);
+			for(int ch = 0; ch < acq.getHead().active_channels; ch ++){
+		        std::vector<float> input_data((float*)&acq.getDataPtr()[ch*acq.getHead().number_of_samples*2], (float*)&acq.getDataPtr()[ch*acq.getHead().number_of_samples*2] + acq.getHead().number_of_samples*2);
 
-            CompressedBuffer<float> comp_buffer(input_data, -1.0, compression_precision);
-            std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
- 
-            compressed_bytes_sent_ += serialized_buffer.size();
-            uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
-                            
-            uint32_t bs = (uint32_t)serialized_buffer.size();
-            boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
-            boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));
+		        CompressedBuffer<float> comp_buffer(input_data, -1.0, compression_precision);
+		        std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
+	 
+		        compressed_bytes_sent_ += serialized_buffer.size();
+		        uncompressed_bytes_sent_ += data_elements*2*sizeof(float)/acq.getHead().active_channels;
+		                        
+		        uint32_t bs = (uint32_t)serialized_buffer.size();
+		        boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
+		        boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));
+			}
         }
         
     }
@@ -1333,23 +1341,73 @@ public:
 
 
         if (data_elements) {
-            std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
+            
 
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*acq.getHead().sample_time_us*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us);
+                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
             }
-
-            CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
-            std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
- 
-            compressed_bytes_sent_ += serialized_buffer.size();
-            uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
-                            
-            uint32_t bs = (uint32_t)serialized_buffer.size();
-            boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
-            boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));
+			if (tmp.get_number_of_elements() == 0){
+				std::cout << "samples =" << acq.getHead().number_of_samples << std::endl;
+				std::cout << "channels =" << acq.getHead().active_channels << std::endl;
+            	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
+			}
+			//std::cout << "k space encode line " << acq.getHead().idx.kspace_encode_step_1 << std::endl;
+            memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
+            //std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
+			if(acq.getHead().idx.kspace_encode_step_1 == 127){
+            	Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_epi.cplx" );
+			}
+			bool use_transform = false;
+			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
+			if(use_transform){
+				//std::cout << "size " << N << std::endl;
+				if(N > 50000) { 
+					Gadgetron::hoNDFFT<float>::instance()->dct((float*)&acq.getDataPtr()[0], N, 1, 1);
+				}
+				else {
+					Gadgetron::hoNDFFT<float>::instance()->dct((float*)&acq.getDataPtr()[0], N, 1, 1);
+				}
+			/*	for(int N = 2; N < acq.getHead().number_of_samples*2; N = N*2){
+					if(std::floor(N/acq.getHead().number_of_samples)){
+						if(float(N)/acq.getHead().number_of_samples == 1){ n = N; }
+						else{n = N/2;}
+						break;
+					}
+				}
+				std::cout << n << "     " << acq.getHead().number_of_samples << std::endl;
+            	for(int i = 0; i < acq.getHead().active_channels; i++){
+					fwht(&input_data[0]+acq.getHead().number_of_samples*2*i,n*2); //HERE IS WHERE WE DO THE TRANSFORM
+					//fix scaling
+					for(int j = 0; j < n*2; j++){
+						input_data[acq.getHead().number_of_samples*2*i+j] *= std::sqrt(2*n);
+					}		
+				}*/
+			}
+				//memcpy(tmp.get_data_ptr(), &input_data[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
+            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmpifft.cplx" );
+			//}
+			//std::cout << local_tolerance << std::endl;
+			std::vector<uint8_t> serialized_buffer;
+			int segments = acq.getHead().active_channels*4;
+			//int segments = 1;			
+			int segment_size = N/segments;
+			if (N%segments) {
+            	throw GadgetronClientException("Invalid segment size");
+        	}
+			for(int ch = 0; ch < segments; ch ++){
+		        std::vector<float> input_data((float*)&acq.getDataPtr()[0]+ch*segment_size, (float*)&acq.getDataPtr()[0]+(ch+1)*segment_size);
+		        CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
+				std::vector<uint8_t> serialized = comp_buffer.serialize();
+				if(ch == 0){serialized_buffer = serialized;}
+				else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+			}
+	        compressed_bytes_sent_ += serialized_buffer.size();
+	        uncompressed_bytes_sent_ += data_elements*2*sizeof(float);                        
+	        uint32_t bs = (uint32_t)serialized_buffer.size();
+	        boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
+	        boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));		
         }
     }
 
@@ -1441,7 +1499,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*acq.getHead().sample_time_us*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us);
+            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
         }
 
         if (data_elements) {
@@ -1449,9 +1507,48 @@ public:
             char* comp_buffer = new char[comp_buffer_size];
             size_t compressed_size = 0;
             try {
-                compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[0],
+
+	/*			std::vector<float> real(acq.getHead().number_of_samples*acq.getHead().active_channels);
+				std::vector<float> imag(acq.getHead().number_of_samples*acq.getHead().active_channels);
+				std::vector<float> data(acq.getHead().number_of_samples*acq.getHead().active_channels*2);
+				memcpy(&data[0], acq.getDataPtr(), acq.getHead().number_of_samples*acq.getHead().active_channels*2*sizeof(float));
+				for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels; i++){
+					real[i] = data[2*i];
+					imag[i] = data[2*i+1];
+				}
+				for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels; i++){
+					data[i] = real[i];
+					data[i+acq.getHead().number_of_samples*acq.getHead().active_channels] = imag[i];
+				}
+
+				compressed_size = compress_zfp_tolerance(&data[0],
+								                                         acq.getHead().number_of_samples*2, acq.getHead().active_channels,
+								                                         local_tolerance, comp_buffer, comp_buffer_size);
+*/
+
+				std::random_device generator;
+				float abs_tol = std::exp2(std::floor(std::log2(local_tolerance)));
+				std::normal_distribution<float> distribution(0.0,1.0);
+				std::vector<float> data(acq.getHead().number_of_samples*acq.getHead().active_channels*2);
+				for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels*2; i++){
+					data[i] = distribution(generator);
+				}
+
+				if(true){
+					if (tmp.get_number_of_elements() == 0){
+				    	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
+					}
+				    memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &data[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
+					if(acq.getHead().idx.kspace_encode_step_1 == 127){
+				    	Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_random.cplx" );
+					}
+				}
+
+				compressed_size = compress_zfp_tolerance(&data[0],acq.getHead().number_of_samples*2, acq.getHead().active_channels,local_tolerance, comp_buffer, comp_buffer_size);
+
+                /*compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[0],
                                                          acq.getHead().number_of_samples*2, acq.getHead().active_channels,
-                                                         local_tolerance, comp_buffer, comp_buffer_size);
+                                                         local_tolerance, comp_buffer, comp_buffer_size);*/
 
                 compressed_bytes_sent_ += compressed_size;
                 uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
@@ -1483,6 +1580,7 @@ public:
     }
 
 protected:
+	Gadgetron::hoNDArray< std::complex<float> > tmp;
     typedef std::map<unsigned short, boost::shared_ptr<GadgetronClientMessageReader> > maptype;
 
     GadgetronClientMessageReader* find_reader(unsigned short r)
@@ -1615,6 +1713,7 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
         stat.sigma_min = meta.as_double("min_sigma");
         stat.sigma_max = meta.as_double("max_sigma");
         stat.sigma_mean = meta.as_double("mean_sigma");
+        stat.sigma_rms = meta.as_double("rms_sigma");
         stat.noise_dwell_time_us = meta.as_double("noise_dwell_time_us");
     } catch (...) {
         stat.status = false;
@@ -1774,7 +1873,41 @@ int main(int argc, char **argv)
                     std::cout << "  !!!!!! COMPRESSION TOLERANCE LEVEL SPECIFIED, BUT IT IS NOT POSSIBLE TO DETERMINE SIGMA. ASSIMUMING SIGMA == 1 !!!!!!" << std::endl;
                 }
             } else {
-                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << std::endl; 
+                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << ", RMS Sigma: " << noise_stats.sigma_rms << std::endl; 
+            }
+
+            if (compression_tolerance > 0.0) {
+                ISMRMRD::Compression c;
+                if (use_zfp_compression) {
+                    c.compressionAlgorithm = "ZFP";
+                } else {
+                    c.compressionAlgorithm = "NHLBI";
+                }
+                c.compressionTolerance = compression_tolerance;
+                c.compressionSigmaReference = 1.0;
+                c.compressionDwellTimeReference_us = 0.0;
+                if (noise_stats.status) {
+                    c.compressionSigmaReference = noise_stats.sigma_min;
+                    c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
+                }
+                if (!h.acquisitionSystemInformation) {
+                    ISMRMRD::AcquisitionSystemInformation si;
+                    si.compression = c;
+                    h.acquisitionSystemInformation = si;
+                } else {
+                    h.acquisitionSystemInformation().compression = c;
+                }
+
+                std::stringstream ss;
+                ISMRMRD::serialize(h,ss);
+                xml_config = ss.str();
+
+				if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
+					noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
+				} else {
+					noise_stats.relative_receiver_noise_bw = 1.0;
+				}
+
             }
         }
     }

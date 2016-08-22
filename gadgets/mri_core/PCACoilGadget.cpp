@@ -139,7 +139,6 @@ namespace Gadgetron {
 
                 //GDEBUG("Data offset = %d\n", data_offset);
 
-                hoNDArray<std::complex<float> > means;
                 std::vector<size_t> means_dims; means_dims.push_back(channels);
 
                 try{ means.create(&means_dims); }
@@ -221,7 +220,7 @@ namespace Gadgetron {
                     if (inherited::process(mb) != GADGET_OK) {
                         GDEBUG("Failed to reprocess buffered data\n");
                         return GADGET_FAIL;
-                    }
+                    }					
                 }
                 //Remove references in this buffer
                 buffer_[location].clear();

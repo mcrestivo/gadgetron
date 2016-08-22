@@ -252,6 +252,49 @@ template<class T> void hoNDFFT<T>::fft_int(hoNDArray< ComplexType >* input, size
 
 	*input *= scale;
 }
+
+
+template<class T> void hoNDFFT<T>::dct(float* data_ptr, int N, int num, int sign)	{
+
+	if (sign != -1 && sign != 1) throw std::runtime_error("hoNDFFT::fft_int: illegal sign provided");
+	fftwf_plan fft_plan;
+
+	int n0 = N/num;
+	//int num_thr = get_num_threads_fft1(n0, num);
+	//int num_thr = num ? num < 20 : 20;
+	int n,i;
+
+	float scale = 1/std::sqrt(2*float(n0));
+	//Allocate storage and make plan
+	{
+            std::lock_guard<std::mutex> guard(mutex_);
+            unsigned planner_flags = FFTW_ESTIMATE | FFTW_PRESERVE_INPUT;
+			fftwf_r2r_kind kind;
+			if(num == 1){kind = sign == 1 ? FFTW_REDFT10 : FFTW_REDFT01;}
+			else{kind = FFTW_REDFT00;}
+            fft_plan = fftwf_plan_r2r_1d(n0,data_ptr,data_ptr,kind,planner_flags);
+            if (fft_plan == NULL){
+                throw std::runtime_error("hoNDFFT: failed to create fft plan");
+            }
+	}
+#pragma omp parallel for private(n,i) shared(num, fft_plan, data_ptr, n0)
+	for ( n=0; n<num; n++ ){
+		fftwf_execute_r2r(fft_plan, data_ptr+n*n0, data_ptr+n*n0);
+		for(i = 0; i<n0; i++){
+			data_ptr[n*n0+i] *= scale;
+		}
+	}
+	//clean up
+	{
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (fft_plan != 0){
+                fftwf_destroy_plan(fft_plan);
+            }
+			//fftwf_cleanup_threads();
+	}
+}
+
+
 template<typename T>
 inline size_t hoNDFFT<T>::fftshiftPivot(size_t x)
 {

@@ -151,7 +151,20 @@ namespace Gadgetron{
 	    }
 	  }
       }
+  
+    if (current_ismrmrd_header_.acquisitionSystemInformation && 
+        current_ismrmrd_header_.acquisitionSystemInformation->compression) {
+        
+        ISMRMRD::Compression comp_info = *current_ismrmrd_header_.acquisitionSystemInformation->compression;
 
+        GDEBUG("Compression Information: \n\t algorithm: %s \n\t tolerance: %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
+
+        is_compressed_data_ = true;
+        compression_algorithm_ = comp_info.compressionAlgorithm;
+        compression_tolerance_ = comp_info.compressionTolerance;
+        compression_sigma_reference_ = comp_info.compressionSigmaReference;
+        compression_dwell_time_reference_us_ = comp_info.compressionDwellTimeReference_us;       
+    }
 
     //Let's figure out if some channels are "scale_only"
     std::string uncomb_str = scale_only_channels_by_name.value();
@@ -322,6 +335,38 @@ namespace Gadgetron{
 	
 	noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
 	
+        if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
+            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;//*std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_);
+            float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
+            GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
+            GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
+            size_t c = noise_prewhitener_matrixf_.get_size(0);
+            std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
+            for (size_t i = 0; i <  c; i++) {
+                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
+                dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
+            }
+        }else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
+			float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;
+
+			//We have to bring it back to absolute scaling on the data to figure out the rounding errors
+			absolute_compression_tolerance *= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
+			//Do the rounding for the exponent
+			absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
+			//Now scale back to noise sample reference
+			absolute_compression_tolerance /= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
+			//absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
+			float absolute_compression_variance = (.0857*absolute_compression_tolerance)*(.0857*absolute_compression_tolerance);
+			GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
+			GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
+			size_t c = noise_prewhitener_matrixf_.get_size(0);
+			std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
+			for (size_t i = 0; i <  c; i++) {
+				//GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
+				dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
+            }
+		}
+
 	//Mask out scale  only channels
 	size_t c = noise_prewhitener_matrixf_.get_size(0);
 	std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
@@ -335,26 +380,26 @@ namespace Gadgetron{
 	  }
 	}
 
-    float v = Gadgetron::norm1(noise_covariance_matrixf_);
-    if (v <= 0)
-    {
-        GDEBUG("Accumulated noise prewhietner is empty\n");
-        for (size_t cha = 0; cha < c; cha++)
+        float v = Gadgetron::norm1(noise_covariance_matrixf_);
+        if (v <= 0)
         {
-            noise_prewhitener_matrixf_(cha, cha) = 1;
+            GDEBUG("Accumulated noise prewhietner is empty\n");
+            for (size_t cha = 0; cha < c; cha++)
+            {
+                noise_prewhitener_matrixf_(cha, cha) = 1;
+            }
         }
-    }
-    else
-    {
-        //Cholesky and invert lower triangular
-        arma::cx_fmat noise_covf = as_arma_matrix(&noise_prewhitener_matrixf_);
-        noise_covf = arma::inv(arma::trimatu(arma::chol(noise_covf)));
-    }
+        else
+        {
+            //Cholesky and invert lower triangular
+            arma::cx_fmat noise_covf = as_arma_matrix(&noise_prewhitener_matrixf_);
+            noise_covf = arma::inv(arma::trimatu(arma::chol(noise_covf)));
+        }
 
-    noise_decorrelation_calculated_ = true;
-
+        noise_decorrelation_calculated_ = true;
+        
       } else {
-	noise_decorrelation_calculated_ = false;
+          noise_decorrelation_calculated_ = false;
       }
     }
   }
@@ -430,15 +475,8 @@ namespace Gadgetron{
 	  noise_covariance_matrixf_ *= std::complex<float>(1.0/(float)(number_of_noise_samples_-1));
 	  number_of_noise_samples_ = 1; //Scaling has been done
 	}
+        acquisition_dwell_time_us_ = m1->getObjectPtr()->sample_time_us;
 	computeNoisePrewhitener();
-	acquisition_dwell_time_us_ = m1->getObjectPtr()->sample_time_us;
-	if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
-	  noise_bw_scale_factor_ = 1.0f;
-	} else {
-	  noise_bw_scale_factor_ = (float)std::sqrt(2.0*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
-	}
-
-	noise_prewhitener_matrixf_ *= std::complex<float>(noise_bw_scale_factor_,0.0);
 
 	GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
 	GDEBUG("Acquisition dwell time: %f\n", acquisition_dwell_time_us_);
@@ -451,6 +489,14 @@ namespace Gadgetron{
           if ( noise_prewhitener_matrixf_.get_size(0) == m2->getObjectPtr()->get_size(1) ) {
                hoNDArray<std::complex<float> > tmp(*m2->getObjectPtr());
                gemm(*m2->getObjectPtr(), tmp, noise_prewhitener_matrixf_);
+               acquisition_dwell_time_us_ = m1->getObjectPtr()->sample_time_us;
+               if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
+                   noise_bw_scale_factor_ = 1.0f;
+               } else {
+                   noise_bw_scale_factor_ = (float)std::sqrt(2.0*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
+               }
+
+               *m2->getObjectPtr() *= std::complex<float>(noise_bw_scale_factor_,0.0); //Scaling
           } else {
                if (!pass_nonconformant_data_) {
                      m1->release();
