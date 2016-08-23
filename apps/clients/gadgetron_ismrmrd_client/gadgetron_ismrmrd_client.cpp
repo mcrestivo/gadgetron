@@ -72,6 +72,7 @@ struct NoiseStatistics
     float sigma_min;
     float sigma_max;
     float sigma_mean;
+    float sigma_rms;
     float noise_dwell_time_us;
 };
 
@@ -1338,7 +1339,7 @@ public:
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)/0.79;
+                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
             }
 
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
@@ -1441,7 +1442,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)/0.79;
+            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
         }
 
         if (data_elements) {
@@ -1615,6 +1616,7 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
         stat.sigma_min = meta.as_double("min_sigma");
         stat.sigma_max = meta.as_double("max_sigma");
         stat.sigma_mean = meta.as_double("mean_sigma");
+        stat.sigma_rms = meta.as_double("rms_sigma");
         stat.noise_dwell_time_us = meta.as_double("noise_dwell_time_us");
     } catch (...) {
         stat.status = false;
@@ -1774,7 +1776,7 @@ int main(int argc, char **argv)
                     std::cout << "  !!!!!! COMPRESSION TOLERANCE LEVEL SPECIFIED, BUT IT IS NOT POSSIBLE TO DETERMINE SIGMA. ASSIMUMING SIGMA == 1 !!!!!!" << std::endl;
                 }
             } else {
-                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << std::endl; 
+                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << ", RMS Sigma: " << noise_stats.sigma_rms << std::endl; 
             }
 
             if (compression_tolerance > 0.0) {
