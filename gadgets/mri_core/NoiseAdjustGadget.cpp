@@ -336,7 +336,7 @@ namespace Gadgetron{
 	noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
 	
         if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
-            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_/(0.79*0.79);//*std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_);
+            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;//*std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_);
             float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
             GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
             GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
