@@ -13,6 +13,7 @@
 #include <complex>
 
 #include "NHLBICompression.h"
+#include "hoNDFFT.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include <zfp/zfp.h>
@@ -266,6 +267,8 @@ namespace Gadgetron{
                 for (size_t i = 0; i < comp.size(); i++) {
                     d_ptr[i] = comp[i]; //This uncompresses sample by sample into the uncompressed array
                 }
+
+                //Gadgetron::hoNDFFT<float>::instance()->fft(m2->getObjectPtr(),0);
 
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
