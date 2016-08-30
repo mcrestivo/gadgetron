@@ -40,6 +40,7 @@
 #include <condition_variable>
 
 #include "NHLBICompression.h"
+#include "hoNDFFT.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include "zfp/zfp.h"
@@ -1334,7 +1335,7 @@ public:
 
 
         if (data_elements) {
-            std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
+            
 
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
@@ -1342,11 +1343,22 @@ public:
                 local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
             }
 
+            Gadgetron::hoNDArray< std::complex<float> > tmp(acq.getHead().number_of_samples,acq.getHead().active_channels);
+            memcpy(tmp.get_data_ptr(), &acq.getDataPtr()[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
+            
+            //Gadgetron::hoNDFFT<float>::instance()->ifft(&tmp, 0);
+            
+            std::vector<float> input_data((float*)tmp.get_data_ptr(), (float*)tmp.get_data_ptr() + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
+
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
             std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
  
             compressed_bytes_sent_ += serialized_buffer.size();
             uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
+
+            if (acq.getHead().idx.kspace_encode_step_1 == 64 || acq.getHead().idx.kspace_encode_step_1 == 0|| acq.getHead().idx.kspace_encode_step_1 == 32) {
+                std::cout << "line: " << acq.getHead().idx.kspace_encode_step_1 << ": " << data_elements*2*sizeof(float) << " (" << serialized_buffer.size() << ") " << (1.0*data_elements*2*sizeof(float))/(serialized_buffer.size()) << std::endl;
+            }
                             
             uint32_t bs = (uint32_t)serialized_buffer.size();
             boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
