@@ -346,6 +346,25 @@ namespace Gadgetron{
                 //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
                 dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
             }
+        } else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
+            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_/2.0;
+
+            //We have to bring it back to absolute scaling on the data to figure out the rounding errors
+            absolute_compression_tolerance *= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
+            //Do the rounding for the exponent
+            absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
+            //Now scale back to noise sample reference
+            absolute_compression_tolerance /= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
+            absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
+            float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
+            GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
+            GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
+            size_t c = noise_prewhitener_matrixf_.get_size(0);
+            std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
+            for (size_t i = 0; i <  c; i++) {
+                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
+                dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
+            }
         }
 
 	//Mask out scale  only channels

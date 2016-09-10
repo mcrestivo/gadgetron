@@ -1454,7 +1454,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
+            local_tolerance = 4*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
         }
 
         if (data_elements) {
