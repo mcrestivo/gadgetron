@@ -74,6 +74,7 @@ struct NoiseStatistics
     float sigma_mean;
     float sigma_rms;
     float noise_dwell_time_us;
+    float relative_receiver_noise_bw;
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -1335,14 +1336,13 @@ public:
 
         if (data_elements) {
             
-
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
+                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
             }
 
-            std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
+            std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels*acq.getHead().number_of_samples*2);
 
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
             std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
@@ -1444,7 +1444,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = 4*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
+            local_tolerance = 4*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
         }
 
         if (data_elements) {
@@ -1772,6 +1772,8 @@ int main(int argc, char **argv)
             
             std::cout << "Querying the Gadgetron instance for the dependent measurement: " << noise_id << std::endl; 
             noise_stats = get_noise_statistics(std::string("GadgetronNoiseCovarianceMatrix_") + noise_id, host_name, port, timeout_ms);
+
+
             if (!noise_stats.status) {
                 std::cout << "WARNING: Dependent noise measurement not found on Gadgetron server. Was the noise data processed?" << std::endl;
                 if (compression_tolerance > 0.0) {
@@ -1807,6 +1809,12 @@ int main(int argc, char **argv)
                 ISMRMRD::serialize(h,ss);
                 xml_config = ss.str();
             }
+        }
+
+        if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
+            noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
+        } else {
+            noise_stats.relative_receiver_noise_bw = 1.0;
         }
     }
     

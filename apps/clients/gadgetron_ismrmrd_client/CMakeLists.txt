@@ -20,8 +20,6 @@ include_directories(
   ${Boost_INCLUDE_DIR} 
   ${ISMRMRD_INCLUDE_DIR}
   ${CMAKE_SOURCE_DIR}/gadgets/mri_core
-  ${CMAKE_SOURCE_DIR}/toolboxes/fft
-  ${CMAKE_SOURCE_DIR}/toolboxes/fft/cpu
   ${CMAKE_SOURCE_DIR}/toolboxes/core/cpu
   ${CMAKE_SOURCE_DIR}/toolboxes/core
   )
@@ -32,7 +30,7 @@ endif()
 
 add_executable(gadgetron_ismrmrd_client gadgetron_ismrmrd_client.cpp)
 
-target_link_libraries(gadgetron_ismrmrd_client ${ISMRMRD_LIBRARIES} ${Boost_LIBRARIES} gadgetron_toolbox_cpufft)
+target_link_libraries(gadgetron_ismrmrd_client ${ISMRMRD_LIBRARIES} ${Boost_LIBRARIES})
 
 if (ZFP_FOUND)
    target_link_libraries(gadgetron_ismrmrd_client ${ZFP_LIBRARIES})

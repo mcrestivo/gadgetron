@@ -156,8 +156,7 @@ namespace Gadgetron{
         current_ismrmrd_header_.acquisitionSystemInformation->compression) {
         
         ISMRMRD::Compression comp_info = *current_ismrmrd_header_.acquisitionSystemInformation->compression;
-
-        GDEBUG("Compression Information: \n\t algorithm: %s \n\t tolerance: %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
+        GDEBUG("Compression Information - algorithm: %s, tolerance: %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
 
         is_compressed_data_ = true;
         compression_algorithm_ = comp_info.compressionAlgorithm;
@@ -336,14 +335,13 @@ namespace Gadgetron{
 	noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
 	
         if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
-            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;//*std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_);
+            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;
             float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
             GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
             GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
             size_t c = noise_prewhitener_matrixf_.get_size(0);
             std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
             for (size_t i = 0; i <  c; i++) {
-                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
                 dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
             }
         } else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
@@ -362,7 +360,6 @@ namespace Gadgetron{
             size_t c = noise_prewhitener_matrixf_.get_size(0);
             std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
             for (size_t i = 0; i <  c; i++) {
-                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
                 dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
             }
         }
