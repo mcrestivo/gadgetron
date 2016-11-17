@@ -4,13 +4,36 @@ endif ()
 
 include_directories(
   ${CMAKE_SOURCE_DIR}/gadgets/mri_core
+  ${CMAKE_SOURCE_DIR}/gadgets/pmri
+  ${CMAKE_SOURCE_DIR}/toolboxes/nfft/gpu
+  ${CMAKE_SOURCE_DIR}/toolboxes/fft/cpu
   ${CMAKE_SOURCE_DIR}/toolboxes/core/cpu
+  ${CMAKE_SOURCE_DIR}/toolboxes/core/gpu
+  ${CMAKE_SOURCE_DIR}/toolboxes/mri/pmri/gpu
+  ${CMAKE_SOURCE_DIR}/toolboxes/mri_core
   ${CMAKE_SOURCE_DIR}/toolboxes/solvers
+  ${CMAKE_SOURCE_DIR}/toolboxes/solvers/gpu
   ${CMAKE_SOURCE_DIR}/toolboxes/operators
+  ${CMAKE_SOURCE_DIR}/toolboxes/operators/gpu
+  ${ARMADILLO_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
   )
 
-set(SPIRAL_HEADER_FILES gadgetron_spiral_export.h SpiralToGenericGadget.h vds.h)
-set(SPIRAL_SRC_FILES vds.cpp  SpiralToGenericGadget.cpp)
+set(SPIRAL_HEADER_FILES gadgetron_spiral_export.h 
+  gpuSpiralSensePrepGadget.h 
+  SpiralToGenericGadget.h
+  gpuSpiralDeblurGadget.h
+  gpuSpiralAutoDeblurGadget.h
+  gpuSpiralDeblurGadgetClean.h
+  gpuSpiralDeblurGadgetv2.h)
+set(SPIRAL_SRC_FILES
+  vds.cpp 
+  gpuSpiralSensePrepGadget.cpp 
+  SpiralToGenericGadget.cpp
+  gpuSpiralDeblurGadget.cpp
+  gpuSpiralAutoDeblurGadget.cpp
+  gpuSpiralDeblurGadgetClean.cpp
+  gpuSpiralDeblurGadgetv2.cpp)
 
 if (CUDA_FOUND)
     include_directories(

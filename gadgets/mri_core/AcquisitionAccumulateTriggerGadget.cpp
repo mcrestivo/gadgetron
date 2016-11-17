@@ -192,6 +192,8 @@ namespace Gadgetron{
 
     //Now let's figure out if a trigger condition has occurred.
     if (prev_.head_) { //Make sure this is not the first acquisition we are receiving
+	if(d.head_->getObjectPtr()->idx.repetition < prev_.head_->getObjectPtr()->idx.repetition && prev_.head_->getObjectPtr()->user_int[0] == 0){d.head_->getObjectPtr()->idx.repetition = prev_.head_->getObjectPtr()->idx.repetition+1;} //hack #mcr
+	if(d.head_->getObjectPtr()->idx.repetition < prev_.head_->getObjectPtr()->idx.repetition && prev_.head_->getObjectPtr()->user_int[0] > 0){d.head_->getObjectPtr()->idx.repetition = prev_.head_->getObjectPtr()->idx.repetition;} //hack #mcr
       switch (trigger_) {
       case KSPACE_ENCODE_STEP_1:
  	if (prev_.head_->getObjectPtr()->idx.kspace_encode_step_1 !=
@@ -231,7 +233,8 @@ namespace Gadgetron{
 	break;
       case REPETITION:
 	if (prev_.head_->getObjectPtr()->idx.repetition !=
-	    d.head_->getObjectPtr()->idx.repetition) {
+	    d.head_->getObjectPtr()->idx.repetition && prev_.head_->getObjectPtr()->user_int[0] == 0) { //hack #mcr
+		std::cout << d.head_->getObjectPtr()->scan_counter << std::endl;
 	  trigger();
 	}
 	break;
@@ -319,8 +322,7 @@ namespace Gadgetron{
 
     if (!(
 	  ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PARALLEL_CALIBRATION).isSet(m1->getObjectPtr()->flags) ||
-	  ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PHASECORR_DATA).isSet(m1->getObjectPtr()->flags)
-	))
+	  ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PHASECORR_DATA).isSet(m1->getObjectPtr()->flags)))
       {
 	bucket->data_.push_back(d);
         if (bucket->datastats_.size() < (espace+1)) {
@@ -338,7 +340,7 @@ namespace Gadgetron{
       }
 
     if ( ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PARALLEL_CALIBRATION).isSet(m1->getObjectPtr()->flags) ||
-	 ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PARALLEL_CALIBRATION_AND_IMAGING).isSet(m1->getObjectPtr()->flags) )
+	 ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PARALLEL_CALIBRATION_AND_IMAGING).isSet(m1->getObjectPtr()->flags))
       {
 	bucket->ref_.push_back(d);
         if (bucket->refstats_.size() < (espace+1)) {

@@ -1,4 +1,4 @@
-#include "gpuSpiralSensePrepGadget.h"
+#include "gpuSpiralAutoDeblurGadget.h"
 #include "GenericReconJob.h"
 #include "cuNDArray_utils.h"
 #include "cuNDArray_reductions.h"
@@ -16,9 +16,18 @@
 #include <algorithm>
 #include <vector>
 
-namespace Gadgetron{
+using namespace std;
+// using namespace Gadgetron;
 
-  gpuSpiralSensePrepGadget::gpuSpiralSensePrepGadget()
+namespace Gadgetron {
+
+// Define desired precision
+typedef float _real;
+typedef complext<_real> _complext;
+typedef reald<_real,2>::Type _reald2;
+typedef cuNFFT_plan<_real,2> plan_type;
+
+  gpuSpiralAutoDeblurGadget::gpuSpiralAutoDeblurGadget()
     : samples_to_skip_start_(0)
     , samples_to_skip_end_(0)
     , samples_per_interleave_(0)
@@ -28,9 +37,9 @@ namespace Gadgetron{
   {
   }
 
-  gpuSpiralSensePrepGadget::~gpuSpiralSensePrepGadget() {}
+  gpuSpiralAutoDeblurGadget::~gpuSpiralAutoDeblurGadget() {}
 
-  int gpuSpiralSensePrepGadget::process_config(ACE_Message_Block* mb)
+  int gpuSpiralAutoDeblurGadget::process_config(ACE_Message_Block* mb)
   {
 
     int number_of_devices = 0;
@@ -217,14 +226,30 @@ namespace Gadgetron{
     return GADGET_OK;
   }
 
-  int gpuSpiralSensePrepGadget::
+  int gpuSpiralAutoDeblurGadget::
   process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *m1,
-	  GadgetContainerMessage< hoNDArray< std::complex<float> > > *m2)
+	  GadgetContainerMessage< hoNDArray< std::complex<float> > > *m2,
+	  GadgetContainerMessage< hoNDArray<float> > *m3)
   {
     // Noise should have been consumed by the noise adjust, but just in case...
     //
-
-    write_nd_array< std::complex<float> >( m2->getObjectPtr(), "nd_array_data.cplx" );
+	int flag = m1->getObjectPtr()->user_int[0];
+	if(flag > 0){
+		Nints = 1;
+		interleaves_ = static_cast<int>(Nints);
+		if(flag_old != flag){ prepared_ = false;}
+		flag_old = flag;
+	}
+	if(flag == 0){
+		Nints = Nints_;
+		interleaves_ = static_cast<int>(Nints);
+		//prepared_ = false;
+		if(flag_old != flag){ prepared_ = false;}
+		flag_old = flag;
+	}
+	//int flag = 0;	
+	//std::cout << "flag set to " << flag << std::endl;
+    //write_nd_array< std::complex<float> >( m2->getObjectPtr(), "nd_array_data.cplx" );
 
     bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
     if (is_noise) {
@@ -232,109 +257,72 @@ namespace Gadgetron{
       return GADGET_OK;
     }
 
+	bool is_last_scan_in_slice = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_LAST_IN_SLICE);
+
     if (!prepared_) {
 
-      int     nfov   = 1;         /*  number of fov coefficients.             */
-      int     ngmax  = 1e5;       /*  maximum number of gradient samples      */
-      double  *xgrad;             /*  x-component of gradient.                */
-      double  *ygrad;             /*  y-component of gradient.                */
-      double  *x_trajectory;
-      double  *y_trajectory;
-      double  *weighting;
-      int     ngrad;
-      //int     count;
-      double sample_time = (1.0*Tsamp_ns_) * 1e-9;
+		double sample_time = (1.0*Tsamp_ns_) * 1e-9;
+		samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
 
-      /*	call c-function here to calculate gradients */
-      calc_vds(smax_,gmax_,sample_time,sample_time,Nints_,&fov_,nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
-      samples_per_interleave_ = std::min(ngrad,static_cast<int>(m1->getObjectPtr()->number_of_samples));
+		GDEBUG("Using %d samples per interleave\n", samples_per_interleave_);
+		GDEBUG("Using %d interleaves\n", interleaves_);
 
-      GDEBUG("Using %d samples per interleave\n", samples_per_interleave_);
+		/* Calcualte the trajectory and weights*/
+		//calc_traj(xgrad, ygrad, samples_per_interleave_, Nints, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
+		if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0 || flag > 0){
+			host_traj_ = boost::shared_ptr< hoNDArray<floatd2> >(new hoNDArray<floatd2>);
+			host_weights_ = boost::shared_ptr< hoNDArray<float> >(new hoNDArray<float>);
 
-      /* Calcualte the trajectory and weights*/
-      calc_traj(xgrad, ygrad, samples_per_interleave_, Nints_, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
+			std::vector<size_t> trajectory_dimensions;
+			trajectory_dimensions.push_back(samples_per_interleave_*Nints);
 
-      host_traj_ = boost::shared_ptr< hoNDArray<floatd2> >(new hoNDArray<floatd2>);
-      host_weights_ = boost::shared_ptr< hoNDArray<float> >(new hoNDArray<float>);
+			host_traj_->create(&trajectory_dimensions);
+			host_weights_->create(&trajectory_dimensions);
+		}
 
-      std::vector<size_t> trajectory_dimensions;
-      trajectory_dimensions.push_back(samples_per_interleave_*Nints_);
+		  {
+		float *p3 = m3->getObjectPtr()->get_data_ptr();
+		float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
+		float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
+		int index;
+		float krmax = 0;
+		if(flag > 0){ index = 0; }
+		else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
+		GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
+		for (int i = 0; i < (samples_per_interleave_); i++) {
+			  //co_ptr[i*2]   = p3[i*3];
+			  //co_ptr[i*2+1] = p3[i*3+1];
+			  //we_ptr[i] = p3[i*3+2];
+			  if(p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1] > krmax){
+					krmax = p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1];
+			  }
+		}
+		krmax = 2.0*std::sqrt(krmax);
+		std::cout << index << std::endl;
+		for (int i = 0; i < (samples_per_interleave_); i++) {
+			  //std::cout << i << " " << krmax << std::endl;	
+			  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
+			  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax;
+			  we_ptr[index+i] = p3[i*3+2]/krmax;
+		}
 
-      host_traj_->create(&trajectory_dimensions);
-      host_weights_->create(&trajectory_dimensions);
-
-      {
-	float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
-	float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
-	
-	for (int i = 0; i < (samples_per_interleave_*Nints_); i++) {
-	  co_ptr[i*2]   = -x_trajectory[i]/2;
-	  co_ptr[i*2+1] = -y_trajectory[i]/2;
-	  we_ptr[i] = weighting[i];
 	}
-      }
 
-      delete [] xgrad;
-      delete [] ygrad;
-      delete [] x_trajectory;
-      delete [] y_trajectory;
-      delete [] weighting;
+		if( is_last_scan_in_slice || Nints == 1){
+			// Setup the NFFT plan
+			//
+			cuNDArray<floatd2> traj(*host_traj_);
+			
+			//write_nd_array<floatd2>( &traj, "traj.real" );
+			dcw_buffer_ = boost::shared_ptr< cuNDArray<float> >( new cuNDArray<float>(*host_weights_) );
 
-      // Setup the NFFT plan
-      //
+			nfft_plan_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+			nfft_plan_.preprocess(&traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
 
-      cuNDArray<floatd2> traj(*host_traj_);
-      dcw_buffer_ = boost::shared_ptr< cuNDArray<float> >( new cuNDArray<float>(*host_weights_) );
-	
-      nfft_plan_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-      nfft_plan_.preprocess(&traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
-
-      // Setup the non-Cartesian Sense encoding operator 
-      //
-      
-      E_ = boost::shared_ptr< cuNonCartesianSenseOperator<float,2> >(new cuNonCartesianSenseOperator<float,2>);
-      E_->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-      
-      // Setup cg solver if the csm/regularization image is to be based hereon
-      //
-
-      if( buffer_using_solver_ ){
-
-	E_->set_dcw(sqrt(dcw_buffer_.get()));
-
-	D_ = boost::shared_ptr< cuCgPreconditioner<float_complext> >( new cuCgPreconditioner<float_complext>() );
-	cg_.set_encoding_operator( E_ );
-	cg_.set_preconditioner( D_ );
-	cg_.set_max_iterations( 2 );
-	cg_.set_tc_tolerance( 1e-6 );
-	cg_.set_output_mode( cuCgSolver<float_complext>::OUTPUT_SILENT);
-      }
-
-      prepared_ = true;
+			prepared_ = true;
+		}
     }
 
-    // Allocate host data buffer if it is NULL
-    //
-
-    if (!host_data_buffer_.get()) {
-
-      std::vector<size_t> data_dimensions;
-      data_dimensions.push_back(samples_per_interleave_*interleaves_);
-      data_dimensions.push_back(m1->getObjectPtr()->active_channels);
-
-      host_data_buffer_ = boost::shared_array< hoNDArray<float_complext> >
-	(new hoNDArray<float_complext>[slices_*sets_]);
-      
-      if (!host_data_buffer_.get()) {
-	GDEBUG("Unable to allocate array for host data buffer\n");
-	return GADGET_FAIL;
-      }
-
-      for (unsigned int i = 0; i < slices_*sets_; i++) {
-	host_data_buffer_[i].create(&data_dimensions);
-	host_data_buffer_[i].fill(0.0f);
-      }
-    }
 
     // Allocate various counters if they are NULL
     //
@@ -364,7 +352,30 @@ namespace Gadgetron{
     unsigned int interleave = m1->getObjectPtr()->idx.kspace_encode_step_1;
     unsigned int slice = m1->getObjectPtr()->idx.slice;
     unsigned int set = m1->getObjectPtr()->idx.set;
-    unsigned int samples_per_channel =  host_data_buffer_[set*slices_+slice].get_size(0);
+    unsigned int samples_per_channel =  samples_per_interleave_*interleaves_;
+
+	if(flag > 0){ interleave = 0; }
+
+    if (interleave == 0) {
+
+      std::vector<size_t> data_dimensions;
+      data_dimensions.push_back(samples_per_interleave_*interleaves_);
+      data_dimensions.push_back(m1->getObjectPtr()->active_channels);
+
+      host_data_buffer_ = boost::shared_array< hoNDArray<float_complext> >
+	(new hoNDArray<float_complext>[slices_*sets_]);
+      GDEBUG("Buffer slices %d\n", slices_);
+	  GDEBUG("Buffer sets %d\n", sets_);
+      if (!host_data_buffer_.get()) {
+	GDEBUG("Unable to allocate array for host data buffer\n");
+	return GADGET_FAIL;
+      }
+
+      for (unsigned int i = 0; i < slices_*sets_; i++) {
+	host_data_buffer_[i].create(&data_dimensions);
+	host_data_buffer_[i].fill(0.0f);
+      }
+    }
 
     // Some book-keeping to keep track of the frame count
     //
@@ -376,7 +387,7 @@ namespace Gadgetron{
     // Enque profile until all profiles for the reconstruction have been received.
     //
     
-    buffer_[set*slices_+slice].enqueue_tail(duplicate_profile(m1));
+    //buffer_[set*slices_+slice].enqueue_tail(duplicate_profile(m1));
     
     // Copy profile into the accumulation buffer for csm/regularization estimation
     //
@@ -388,7 +399,7 @@ namespace Gadgetron{
       GDEBUG("Adjusting samples_to_skip_end_ = %d\n", samples_to_skip_end_);
     }
 
-    std::complex<float>* data_ptr = reinterpret_cast< std::complex<float>* >
+     std::complex<float>* data_ptr = reinterpret_cast< std::complex<float>* >
       (host_data_buffer_[set*slices_+slice].get_data_ptr());
 
     std::complex<float>* profile_ptr = m2->getObjectPtr()->get_data_ptr();
@@ -401,14 +412,13 @@ namespace Gadgetron{
     // Have we received sufficient data for a new frame?
     //
 
-    bool is_last_scan_in_slice = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_LAST_IN_SLICE);
 
-    if (is_last_scan_in_slice) {
+    if (is_last_scan_in_slice || Nints == 1) {
 
       // This was the final profile of a frame
       //
 
-      if( Nints_%interleaves_counter_singleframe_[set*slices_+slice] ){
+      if( Nints%interleaves_counter_singleframe_[set*slices_+slice] ){
 	GDEBUG("Unexpected number of interleaves encountered in frame\n");
 	return GADGET_FAIL;
       }
@@ -416,28 +426,16 @@ namespace Gadgetron{
       // Has the acceleration factor changed?
       //
 
-      if( acceleration_factor_ != Nints_/interleaves_counter_singleframe_[set*slices_+slice] ){
+      if( acceleration_factor_ != Nints/interleaves_counter_singleframe_[set*slices_+slice] ){
 
 	GDEBUG("Change of acceleration factor detected\n");
-	acceleration_factor_ =  Nints_/interleaves_counter_singleframe_[set*slices_+slice];
+	acceleration_factor_ =  Nints/interleaves_counter_singleframe_[set*slices_+slice];
 
 	// The encoding operator needs to have its domain/codomain dimensions set accordingly
 	//
 	
-	if( buffer_using_solver_ ){
-
-	  std::vector<size_t> domain_dims = image_dimensions_recon_;
-	  
-	  std::vector<size_t> codomain_dims = *host_traj_->get_dimensions();
-	  codomain_dims.push_back(m1->getObjectPtr()->active_channels);
-	  
-	  E_->set_domain_dimensions(&domain_dims);
-	  E_->set_codomain_dimensions(&codomain_dims);
-
-	  cuNDArray<floatd2> traj(*host_traj_);
-	  E_->preprocess(&traj);
-	}
       }
+	
 
       // Prepare an image header for this frame
       //
@@ -461,7 +459,7 @@ namespace Gadgetron{
       header->getObjectPtr()->field_of_view[1] = fov_vec_[1];
       header->getObjectPtr()->field_of_view[2] = fov_vec_[2];
 
-      header->getObjectPtr()->channels = base_head->active_channels;
+      header->getObjectPtr()->channels = 1;//base_head->active_channels;
       header->getObjectPtr()->slice = base_head->idx.slice;
       header->getObjectPtr()->set = base_head->idx.set;
 
@@ -481,14 +479,14 @@ namespace Gadgetron{
       // Enque header until we are ready to assemble a Sense job
       //
 
-      image_headers_queue_[set*slices_+slice].enqueue_tail(header);
+      //image_headers_queue_[set*slices_+slice].enqueue_tail(header);
 
       // Check if it is time to reconstruct.
       // I.e. prepare and pass a Sense job downstream...
       //
 
       if( !use_multiframe_grouping_ || 
-	  (use_multiframe_grouping_ && interleaves_counter_multiframe_[set*slices_+slice] == Nints_) ){
+	  (use_multiframe_grouping_ && interleaves_counter_multiframe_[set*slices_+slice] == Nints) ){
 
 	unsigned int num_coils = m1->getObjectPtr()->active_channels;
 	
@@ -501,179 +499,179 @@ namespace Gadgetron{
 	image_dims.push_back(num_coils);
 	
 	cuNDArray<float_complext> image(&image_dims);
-	cuNDArray<float_complext> data(&host_data_buffer_[set*slices_+slice]);
-
-	write_nd_array<float_complext>( &data, "ouputhd5data.cplx" );
-	
-	nfft_plan_.compute( &data, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
-
-	// Check if we need to compute a new csm
-	//
-	
-	if( propagate_csm_from_set_ < 0 || propagate_csm_from_set_ == set ){	  	  
-	  csm_ = estimate_b1_map<float,2>( &image ); // Estimates csm
-	}
-	else{
-	  //GDEBUG("Set %d is reusing the csm from set %d\n", set, propagate_csm_from_set_);
-	  if( csm_.get() == 0x0 ){
-	    GDEBUG("Error, csm has not been computed\n");
-	    return GADGET_FAIL;
-	  }	  
-	}
-	E_->set_csm(csm_);
-
-	// Compute regularization using basic coil combination
-	//
-	
+	// Setup output image array
 	image_dims.pop_back();
-	cuNDArray<float_complext> reg_image(&image_dims);
-	E_->mult_csm_conj_sum( &image, &reg_image );
+	cuNDArray<_complext> reg_image(&image_dims);
+	hoNDArray<_complext> output_image(&image_dims);
+	hoNDArray<_real> cost(&image_dims);
+	//cuNDArray<float_complext> data(&host_data_buffer_[set*slices_+slice]);
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	double sample_time = (1.0*Tsamp_ns_) * 1e-9;
+	if(flag > 0){
+		GDEBUG("Enter Map Scope \n");
+		//filter data
+		hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
+		for(int i =0; i < samples_per_interleave_; i++){
+			map_samples0_filt[i] *= exp(-.5*pow((i)/100.,2.));
+		}
+
+		// Upload map data to device
+		cuNDArray<_complext> samples(map_samples0_filt);
+
+		// Gridder first map data
+		nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
+
 	
-	if( buffer_using_solver_ ){
-	  
-	  // Compute regularization using cg solver
-	  //
-	  
-	  // Define preconditioning weights
-	  boost::shared_ptr< cuNDArray<float> > _precon_weights = sum(abs_square(csm_.get()).get(), 2);
-	  reciprocal_sqrt_inplace(_precon_weights.get());	
-	  boost::shared_ptr< cuNDArray<float_complext> > precon_weights = real_to_complex<float_complext>( _precon_weights.get() );
-	  _precon_weights.reset();
-	  D_->set_weights( precon_weights );
-	  
-	  // Solve from the plain coil combination
-	  reg_image = *cg_.solve_from_rhs(&reg_image);
+		// Setup SENSE opertor and compute CSM
+		//boost::shared_ptr< cuNDArray<float_complext> > csm;
+		//boost::shared_ptr< hoNDArray<_complext> > host_image0 = boost::shared_ptr< hoNDArray<_complext> >(new hoNDArray<_complext>);
+		//GDEBUG("But not this far\n");
+		boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
+		if( flag == 1){
+			csm_ = estimate_b1_map<float,2>( &image );
+			E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+			E->set_csm(csm_);
+			E->mult_csm_conj_sum( &image, &reg_image );
+			Map0_image = image.to_host();
+			write_nd_array<_complext>( Map0_image.get() , "Map_image.cplx" );
+			//map_num = 1;
+		}
+		else if( flag == 2){
+			cuNDArray<_complext> reg_image1(&image_dims);
+			//host_image0 = read_nd_array<_complext>("Map_image.cplx");
+			//host_image0->create(image_dims);
+			cuNDArray<_complext> tempcuarray(Map0_image.get());
+			//std::cout << "dimensions = " << host_image0->get_size(0) << " " << host_image0->get_size(1) << std::endl;
+			csm_ = estimate_b1_map<float,2>( &tempcuarray );
+			E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+			E->set_csm(csm_);
+			E->mult_csm_conj_sum( &image, &reg_image1 );	
+			E->mult_csm_conj_sum( &tempcuarray, &reg_image );
+			//map_num = 0;
+		
+		//boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() ); 	
+			boost::shared_ptr< hoNDArray<_complext> > host_image0 = reg_image.to_host();
+			boost::shared_ptr< hoNDArray<_complext> > host_image1 = reg_image1.to_host();
+		
+		//Comput B0 Map on host
+			hoNDArray<_complext> temp0 = *host_image0;
+			hoNDArray<_complext> temp1 = *host_image1;
+			output_map = *(new hoNDArray<_real>(&image_dims));
+			//hoNDArray<_real> output_map(&image_dims);
+			for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+				output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
+				//std::cout << output_map[i] << std::endl;
+			}
+			write_nd_array<_real>( &output_map, "map.real" );
+		}
 	}
 
-	// Get ready to fill in the Sense job
-	//
+	else{
+		// Upload map data to device
+		cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
+		// Gridder first map data
+		nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+		// Setup SENSE opertor and compute CSM
+		csm_ = estimate_b1_map<float,2>( &image );
+		boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
+		E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+		E->set_csm(csm_);
+		E->mult_csm_conj_sum( &image, &reg_image );	
+		// Output result
+		//boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
+		boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
+		write_nd_array<_complext>( host_image.get(), "Blurred_Image.cplx");
+		
+		if(true){
+			//boost::shared_ptr< hoNDArray<_real> > output_map_ptr = read_nd_array<_real>("map.real");
+			//hoNDArray<_real> output_map = *(output_map_ptr.get());
+			//Compute MFI Coeffs
+			int fmax = 600;
+			int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
+			std::cout << "L = " << L << std::endl;
+			hoNDArray<_complext> MFI_C((fmax*2+1)*L);
+			streampos size;
+			string filename = "MFI_Coeff_L" + std::to_string(L) + ".cplx";
+			//std::cout << filename << std::endl;
+			ifstream mfifile (filename, ios::in|ios::binary|ios::ate);
+			size = mfifile.tellg()/sizeof(double);
+			double * memblock = new double [size];
+			mfifile.seekg( 0, ios::beg );
+			mfifile.read((char *)memblock, sizeof(double)*size);
+			mfifile.close();
+			for( int i = 0; i < size; i+=2){
+				MFI_C[i/2] = _complext(memblock[i],memblock[i+1]);
+			}
+			
+			//Compute Base Images
+			//hoNDArray<_complext> output_image(&image_dims);
+			hoNDArray<_complext> temp_image(&image_dims);
+			_complext I = _complext(0,1);
+			for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+				output_image[i] = I;
+			}
+			hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
+			L = 600;
+			int j = 0;
+			int indx = 0;
+			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
+				samples_demod = host_data_buffer_[set*slices_+slice];
+				std::cout << f <<std::endl;	
+				for( int ch = 0; ch < num_coils; ch++) {
+					for( int k = 0; k < Nints; k++) {
+						for( int i = 0; i < samples_per_interleave_; i++) {
+							samples_demod[(ch*samples_per_interleave_*Nints)+(k*samples_per_interleave_)+i] *= exp(I*2*M_PI*f*i*sample_time);
+						}
+					}
+				}
+				samples = samples_demod;
+				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+				E->mult_csm_conj_sum( &image, &reg_image );
+				temp_image = *(reg_image.to_host());
+				for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+					//indx = output_map[i]+fmax;
+					//output_image[i] += reinterpret_cast<std::complex<float>>(MFI_C[indx*L+j]*temp_image[i]);
+					//cost[i] = std::abs(std::sin(std::arg(temp_image[i])));
+					if( std::abs(f-output_map[i]) <= 50 && std::abs(std::sin(arg(temp_image[i]))) < std::abs(std::sin(arg(output_image[i]))) ){
+						output_image[i] = temp_image[i];
+					}
+				}
+				j++;
+			}
+			write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
+			reg_image = output_image;
+		}
 
-	boost::shared_ptr< hoNDArray<float_complext> > csm_host = csm_->to_host();
-	boost::shared_ptr< hoNDArray<float_complext> > reg_host = reg_image.to_host();
-
-	unsigned int profiles_buffered = buffer_[set*slices_+slice].message_count();
-
-	std::vector<size_t> ddimensions;
-	ddimensions.push_back(samples_per_interleave_*interleaves_counter_singleframe_[set*slices_+slice]*
-			      ((use_multiframe_grouping_) ? acceleration_factor_ : 1));
-	ddimensions.push_back(num_coils);
 	
-	boost::shared_ptr< hoNDArray<float_complext> > data_host(new hoNDArray<float_complext>(&ddimensions));
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 
-	ddimensions.clear();
-	ddimensions.push_back(samples_per_interleave_*interleaves_counter_singleframe_[set*slices_+slice]);
-	ddimensions.push_back((use_multiframe_grouping_) ? acceleration_factor_ : 1);
-
-	boost::shared_ptr< hoNDArray<floatd2> > traj_host(new hoNDArray<floatd2>(&ddimensions));
-	boost::shared_ptr< hoNDArray<float> > dcw_host(new hoNDArray<float>(&ddimensions));
+    GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = 
+            new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
+	cm2->getObjectPtr()->create(output_image.get_dimensions());
+	memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
+	//hoNDArray<_complext> blur_image = *host_image;
+	//memcpy(cm2->getObjectPtr()->get_data_ptr(), blur_image.get_data_ptr(), blur_image.get_number_of_elements()*sizeof(std::complex<float>));
+	header->cont(cm2);
 	
-	for (unsigned int p = 0; p < profiles_buffered; p++) {
-	  ACE_Message_Block* mbq;
-	  if (buffer_[set*slices_+slice].dequeue_head(mbq) < 0) {
-	    GDEBUG("Message dequeue failed\n");
-	    return GADGET_FAIL;
-	  }
-
-	  GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* acq = 
-	    AsContainerMessage<ISMRMRD::AcquisitionHeader>(mbq);
-
-	  GadgetContainerMessage< hoNDArray< std::complex<float> > >* daq = 
-	    AsContainerMessage<hoNDArray< std::complex<float> > >(mbq->cont());
-
-	  if (!acq || !daq) {
-	    GDEBUG("Unable to interpret data on message Q\n");
-	    return GADGET_FAIL;
-	  }
-
-	  for (unsigned int c = 0; c < num_coils; c++) {
-	    float_complext* data_ptr = data_host->get_data_ptr();
-	    data_ptr += c*samples_per_interleave_*profiles_buffered+p*samples_per_interleave_;
-
-	    std::complex<float>* r_ptr = daq->getObjectPtr()->get_data_ptr();
-	    r_ptr += c*daq->getObjectPtr()->get_size(0);
-
-	    memcpy(data_ptr,r_ptr,samples_per_interleave_*sizeof(float_complext));
-	  }
-
-	  floatd2* traj_ptr = traj_host->get_data_ptr();
-	  traj_ptr += p*samples_per_interleave_;
-
-	  floatd2* t_ptr = host_traj_->get_data_ptr();
-	  t_ptr += acq->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_;
-
-	  memcpy(traj_ptr,t_ptr,samples_per_interleave_*sizeof(floatd2));
-
-	  float* dcw_ptr = dcw_host->get_data_ptr();
-	  dcw_ptr += p*samples_per_interleave_;
-
-	  float* d_ptr = host_weights_->get_data_ptr();
-	  d_ptr += acq->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_;
-
-	  memcpy(dcw_ptr,d_ptr,samples_per_interleave_*sizeof(float));
-
-	  mbq->release();
-	}
-
-	GadgetContainerMessage< GenericReconJob >* m4 = new GadgetContainerMessage< GenericReconJob >();
-
-	m4->getObjectPtr()->dat_host_ = data_host;
-	m4->getObjectPtr()->csm_host_ = csm_host;
-	m4->getObjectPtr()->reg_host_ = reg_host;
-	m4->getObjectPtr()->tra_host_ = traj_host;
-	m4->getObjectPtr()->dcw_host_ = dcw_host;
-
-	// Pull the image headers out of the queue
-	//
-	
-	long frames_per_reconstruction = (use_multiframe_grouping_) ? acceleration_factor_ : 1;
-      
-	if( image_headers_queue_[set*slices_+slice].message_count() != frames_per_reconstruction ){
-	  m4->release();
-	  GDEBUG("Unexpected size of image header queue: %d, %d\n", 
-			image_headers_queue_[set*slices_+slice].message_count(), frames_per_reconstruction);
-	  return GADGET_FAIL;
-	}
-	
-	m4->getObjectPtr()->image_headers_ =
-	  boost::shared_array<ISMRMRD::ImageHeader>( new ISMRMRD::ImageHeader[frames_per_reconstruction] );
-	
-	for( unsigned int i=0; i<frames_per_reconstruction; i++ ){	
-	  
-	  ACE_Message_Block *mbq;
-	  
-	  if( image_headers_queue_[set*slices_+slice].dequeue_head(mbq) < 0 ) {
-	    m4->release();
-	    GDEBUG("Image header dequeue failed\n");
-	    return GADGET_FAIL;
-	  }
-	  
-	  GadgetContainerMessage<ISMRMRD::ImageHeader> *m = AsContainerMessage<ISMRMRD::ImageHeader>(mbq);
-	  m4->getObjectPtr()->image_headers_[i] = *m->getObjectPtr();
-	  m->release();
-	}
-
-	// The Sense Job needs an image header as well. 
-	// Let us just copy the initial one...
-	
-	GadgetContainerMessage<ISMRMRD::ImageHeader> *m3 = new GadgetContainerMessage<ISMRMRD::ImageHeader>;
-	*m3->getObjectPtr() = m4->getObjectPtr()->image_headers_[0];
-	m3->cont(m4);
-	
-	if (this->next()->putq(m3) < 0) {
+	if (this->next()->putq(header) < 0) {
 	  GDEBUG("Failed to put job on queue.\n");
-	  m3->release();
+	  header->release();
 	  return GADGET_FAIL;
+	}
 	}
 	interleaves_counter_multiframe_[set*slices_+slice] = 0;
       }
       interleaves_counter_singleframe_[set*slices_+slice] = 0;
     }
     m1->release();
+
     return GADGET_OK;
   }
 
   GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
-  gpuSpiralSensePrepGadget::duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile )
+  gpuSpiralAutoDeblurGadget::duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile )
   {
     GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *copy = 
       new GadgetContainerMessage<ISMRMRD::AcquisitionHeader>();
@@ -688,5 +686,5 @@ namespace Gadgetron{
     return copy;
   }
 
-  GADGET_FACTORY_DECLARE(gpuSpiralSensePrepGadget)
+  GADGET_FACTORY_DECLARE(gpuSpiralAutoDeblurGadget)
 }

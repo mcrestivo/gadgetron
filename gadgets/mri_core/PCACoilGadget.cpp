@@ -20,7 +20,7 @@
 namespace Gadgetron {
 
     PCACoilGadget::PCACoilGadget()
-        : max_buffered_profiles_(100)
+        : max_buffered_profiles_(1000)
         , samples_to_use_(16)
     {
     }
@@ -106,7 +106,7 @@ namespace Gadgetron {
             int profiles_available = buffer_[location].size();
 
             //Are we ready for calculating PCA
-            if (is_last_scan_in_slice || (profiles_available >= max_buffered_profiles_))
+            if (is_last_scan_in_slice || (profiles_available >= max_buffered_profiles_) || m1->getObjectPtr()->user_int[0] > 0)
             {
 
                 //GDEBUG("Calculating PCA coefficients with %d profiles for %d coils\n", profiles_available, channels);
@@ -151,7 +151,7 @@ namespace Gadgetron {
                 means.fill(std::complex<float>(0.0f, 0.0f));
 
                 std::complex<float>* means_ptr = means.get_data_ptr();
-
+				std::cout << profiles_available << std::endl;
                 for (size_t p = 0; p < profiles_available; p++) {
                     GadgetContainerMessage<hoNDArray<std::complex<float> > >* m_tmp =
                         AsContainerMessage<hoNDArray< std::complex<float> > >(buffer_[location][p]->cont());
@@ -162,6 +162,7 @@ namespace Gadgetron {
                     }
 
                     std::complex<float>* d = m_tmp->getObjectPtr()->get_data_ptr();
+					std::cout << "number of elements = " << m_tmp->getObjectPtr()->get_number_of_elements() << std::endl;
 
                     for (unsigned s = 0; s < samples_to_use; s++) {
                         for (size_t c = 0; c < channels; c++) {

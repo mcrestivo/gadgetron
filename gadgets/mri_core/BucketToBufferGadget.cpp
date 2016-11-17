@@ -167,6 +167,7 @@ namespace Gadgetron{
 
         //The storage is based on the encoding space
         uint16_t espace = acqhdr.encoding_space_ref;
+		//uint16_t espace = acqhdr.user_int[0]; //#mcr
 
         //GDEBUG_STREAM("espace: " << acqhdr.encoding_space_ref << std::endl);
         //GDEBUG_STREAM("slice: " << acqhdr.idx.slice << std::endl);
@@ -178,11 +179,11 @@ namespace Gadgetron{
 
         //Get some references to simplify the notation
         //the reconstruction bit corresponding to this ReconDataBuffer and encoding space
-        IsmrmrdReconBit & rbit = getRBit(recon_data_buffers, key, espace);
+        IsmrmrdReconBit & rbit = getRBit(recon_data_buffers, key, acqhdr.user_int[0]);
         //and the corresponding data buffer for the imaging data
         IsmrmrdDataBuffered & dataBuffer = rbit.data_;
         //this encoding space's xml header info
-        ISMRMRD::Encoding & encoding = hdr_.encoding[espace];
+        ISMRMRD::Encoding & encoding = hdr_.encoding[espace];//hack, used to be espace instead of 0 #mcr
         //this bucket's imaging data stats
         IsmrmrdAcquisitionBucketStats & stats = m1->getObjectPtr()->datastats_[espace];
 
@@ -442,6 +443,9 @@ namespace Gadgetron{
             else {
                 NE1 = *stats.kspace_encode_step_1.rbegin() - *stats.kspace_encode_step_1.begin() + 1;
             }
+			if(acqhdr.user_int[0] > 0){
+				//NE1 = 1;
+			}
         }
 
         uint16_t NE2;
