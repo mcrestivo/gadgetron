@@ -20,7 +20,9 @@ add_library(gadgetron_spiral SHARED
   gadgetron_spiral_export.h 
   vds.cpp 
   gpuSpiralSensePrepGadget.h gpuSpiralSensePrepGadget.cpp 
-  SpiralToGenericGadget.h SpiralToGenericGadget.cpp)
+  SpiralToGenericGadget.h SpiralToGenericGadget.cpp
+  gpuSpiralDeblurGadget.h gpuSpiralDeblurGadget.cpp
+  gpuSpiralAutoDeblurGadget.h gpuSpiralAutoDeblurGadget.cpp)
 
 set_target_properties(gadgetron_spiral PROPERTIES VERSION ${GADGETRON_VERSION_STRING} SOVERSION ${GADGETRON_SOVERSION})
 
@@ -36,6 +38,8 @@ target_link_libraries(gadgetron_spiral gadgetron_toolbox_gpuparallelmri)
 
 install (TARGETS gadgetron_spiral DESTINATION lib COMPONENT main)
 install (FILES vds.h gadgetron_spiral_export.h 
+					 gpuSpiralDeblurGadget.h
+					 gpuSpiralAutoDeblurGadget.h
                      gpuSpiralSensePrepGadget.h 
                      SpiralToGenericGadget.h 
                      DESTINATION ${GADGETRON_INSTALL_INCLUDE_PATH} COMPONENT main)
