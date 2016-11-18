@@ -13,9 +13,16 @@
 #include "vds.h"
 #include "ismrmrd/xml.h"
 #include "GPUTimer.h"
+//#include "hoArmadillo.h"
 
 #include <algorithm>
 #include <vector>
+
+#define ARMA_64BIT_WORD
+
+#ifdef USE_ARMADILLO
+	#include <armadillo>
+#endif
 
 #ifdef USE_OMP
     #include <omp.h>
@@ -240,11 +247,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
     //
 
 	GPUTimer *timer;
+
 	int flag = m1->getObjectPtr()->user_int[0];
 	if(flag > 0){
 		Nints = 1;
 		interleaves_ = static_cast<int>(Nints);
-		if(flag_old != flag){ prepared_ = false;}
+		if(flag_old == 0){ prepared_ = false;}
 		flag_old = flag;
 	}
 	if(flag == 0){
@@ -576,6 +584,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	
 	else{
 		timer = new GPUTimer("Doing MFI");
+
 		// Upload map data to device
 		cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
 		// Gridder first map data
@@ -591,75 +600,101 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
 		write_nd_array<_complext>( host_image.get(), "Blurred_Image.cplx");
 		
-		if(true){
-			//boost::shared_ptr< hoNDArray<_real> > output_map_ptr = read_nd_array<_real>("map.real");
-			//hoNDArray<_real> output_map = *(output_map_ptr.get());
-			//Compute MFI Coeffs
-			//timer = new GPUTimer("Read in coeffs");
-			int fmax = 600;
-			int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
-			std::cout << "L = " << L << std::endl;
-			hoNDArray<_complext> MFI_C((fmax*2+1)*L);
-			streampos size;
-			string filename = "MFI_Coeff_L" + std::to_string(L) + ".cplx";
-			//std::cout << filename << std::endl;
-			ifstream mfifile (filename, ios::in|ios::binary|ios::ate);
-			size = mfifile.tellg()/sizeof(double);
-			double * memblock = new double [size];
-			mfifile.seekg( 0, ios::beg );
-			mfifile.read((char *)memblock, sizeof(double)*size);
-			mfifile.close();
-			for( int i = 0; i < size; i+=2){
-				MFI_C[i/2] = _complext(memblock[i],memblock[i+1]);
-			}
-			//delete timer;
-			
-			//Compute Base Images
-			//hoNDArray<_complext> output_image(&image_dims);
-			for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
-				output_image[i] = 0;
-			}
-			hoNDArray<_complext> temp_image(&image_dims);
-			_complext I = _complext(0,1);
-			hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
+		//boost::shared_ptr< hoNDArray<_real> > output_map_ptr = read_nd_array<_real>("map.real");
+		//hoNDArray<_real> output_map = *(output_map_ptr.get());
+		//Compute MFI Coeffs
+		//timer = new GPUTimer("Read in coeffs");
+		int fmax = 600;
+		int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
+		std::cout << "L = " << L << std::endl;
+
+		if( MFI_C.get_number_of_elements() == 0 ){
+			arma::cx_fmat demod( samples_per_interleave_ , L );
+			MFI_C = hoNDArray<_complext>( fmax*2+1 , L );
+			arma::cx_fvec b( samples_per_interleave_ );
+			arma::cx_fvec x( L );
+			std::complex<float> I_f (0.0,1.0);
+		
 			int j = 0;
-			int indx = 0;
 			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
-				samples_demod = host_data_buffer_[set*slices_+slice];
-				int ch;
-				int k;
-				int i;
-				//std::cout << f <<std::endl;	
-				//timer = new GPUTimer("Demodulation");
-				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, I)
-				#endif
-				for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
-					samples_demod[i] *= exp(I*2*M_PI*f*(i%samples_per_interleave_)*sample_time);
+				for(int i = 0; i < samples_per_interleave_; i++) {
+					demod(i,j) = exp(I_f*(float)(2*M_PI*i*sample_time)*f);
+					//std::cout << demod(i,j) << std::endl;
 				}
-				//delete timer;
-				samples = samples_demod;
-				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
-				E->mult_csm_conj_sum( &image, &reg_image );
-				temp_image = *(reg_image.to_host());
-				//int i;
-				//timer = new GPUTimer("MFI Combination");
-				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i, indx) shared(output_image, MFI_C, temp_image, image_dims, L, j, fmax)
-				#endif
-				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
-					indx = output_map[i]+fmax;
-					//output_image[i] += reinterpret_cast<std::complex<float>>(MFI_C[indx*L+j]*temp_image[i]);
-					output_image[i] += (MFI_C[indx*L+j]*temp_image[i]);
-				}
-				//delete timer;
 				j++;
 			}
-			
-			write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
-			reg_image = output_image;
+			j = 0;
+			for(float f = -fmax; f <= fmax; f++){
+				for(int i = 0; i < samples_per_interleave_; i++) {
+					b(i) = exp(I_f*(float)(2*M_PI*i*sample_time)*f);
+				}
+				x = arma::solve(demod, b);
+				memcpy(MFI_C.get_data_ptr()+j*L, x.memptr(), L*sizeof(std::complex<float>));		
+				j++;
+			}
 		}
+		//write_nd_array<_complext>( &MFI_C, "coeffs.cplx" );
 
+/*
+		hoNDArray<_complext> MFI_C((fmax*2+1)*L);
+		streampos size;
+		string filename = "MFI_Coeff_L" + std::to_string(L) + ".cplx";
+		//std::cout << filename << std::endl;
+		ifstream mfifile (filename, ios::in|ios::binary|ios::ate);
+		size = mfifile.tellg()/sizeof(double);
+		double * memblock = new double [size];
+		mfifile.seekg( 0, ios::beg );
+		mfifile.read((char *)memblock, sizeof(double)*size);
+		mfifile.close();
+		for( int i = 0; i < size; i+=2){
+			MFI_C[i/2] = _complext(memblock[i],memblock[i+1]);
+		}
+		//delete timer;
+*/	
+		//Compute Base Images
+		//hoNDArray<_complext> output_image(&image_dims);
+		for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+			output_image[i] = 0;
+		}
+		hoNDArray<_complext> temp_image(&image_dims);
+		_complext I = _complext(0,1);
+		hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
+		int j = 0;
+		int indx = 0;
+		for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
+			samples_demod = host_data_buffer_[set*slices_+slice];
+			int i;
+			//std::cout << f <<std::endl;	
+			//timer = new GPUTimer("Demodulation");
+			#ifdef USE_OMP
+			#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, I)
+			#endif
+			for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
+				samples_demod[i] *= exp(I*2*M_PI*f*(i%samples_per_interleave_)*sample_time);
+			}
+			//delete timer;
+			samples = samples_demod;
+			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+			E->mult_csm_conj_sum( &image, &reg_image );
+			temp_image = *(reg_image.to_host());
+			//int i;
+			//timer = new GPUTimer("MFI Combination");
+			#ifdef USE_OMP
+			#pragma omp parallel for default(none) private(i, indx) shared(output_image, temp_image, image_dims, L, j, fmax)
+			#endif
+			for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
+				indx = output_map[i]+fmax;
+				//output_image[i] += reinterpret_cast<std::complex<float>>(MFI_C[indx*L+j]*temp_image[i]);
+				output_image[i] += (MFI_C[indx*L+j]*temp_image[i]);
+			}
+			//delete timer;
+			j++;
+		}
+		
+		write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
+		reg_image = output_image;
+
+		delete timer;
 	
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 
@@ -676,32 +711,31 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	  header->release();
 	  return GADGET_FAIL;
 	}
-	delete timer;
 	}
 	interleaves_counter_multiframe_[set*slices_+slice] = 0;
       }
       interleaves_counter_singleframe_[set*slices_+slice] = 0;
     }
     m1->release();
-
+	
     return GADGET_OK;
   }
 
-  GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
-  gpuSpiralDeblurGadget::duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile )
-  {
-    GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *copy = 
-      new GadgetContainerMessage<ISMRMRD::AcquisitionHeader>();
-    
-    GadgetContainerMessage< hoNDArray< std::complex<float> > > *cont_copy = 
-      new GadgetContainerMessage< hoNDArray< std::complex<float> > >();
-    
-    *copy->getObjectPtr() = *profile->getObjectPtr();
-    *(cont_copy->getObjectPtr()) = *(AsContainerMessage<hoNDArray< std::complex<float> > >(profile->cont())->getObjectPtr());
-    
-    copy->cont(cont_copy);
-    return copy;
-  }
+//  GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
+//  gpuSpiralDeblurGadget::duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile )
+//  {
+//    GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *copy = 
+//      new GadgetContainerMessage<ISMRMRD::AcquisitionHeader>();
+//    
+//    GadgetContainerMessage< hoNDArray< std::complex<float> > > *cont_copy = 
+//      new GadgetContainerMessage< hoNDArray< std::complex<float> > >();
+//    
+//    *copy->getObjectPtr() = *profile->getObjectPtr();
+//    *(cont_copy->getObjectPtr()) = *(AsContainerMessage<hoNDArray< std::complex<float> > >(profile->cont())->getObjectPtr());
+//    
+//    copy->cont(cont_copy);
+//    return copy;
+//  }
 
   GADGET_FACTORY_DECLARE(gpuSpiralDeblurGadget)
 }

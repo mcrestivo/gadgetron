@@ -12,7 +12,7 @@
 #include "hoNDArray.h"
 #include "vector_td.h"
 #include "cuNFFT.h"
-
+//#include "hoArmadillo.h"
 #include <ismrmrd/ismrmrd.h>
 #include <complex>
 #include <boost/shared_ptr.hpp>
@@ -48,8 +48,8 @@ namespace Gadgetron{
 			GadgetContainerMessage< hoNDArray< std::complex<float> > > * m2,
 			GadgetContainerMessage< hoNDArray<float> > * m3);
     
-    virtual GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
-      duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile );
+    //virtual GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
+    //  duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile );
     
   private:
     int samples_to_skip_start_;
@@ -100,6 +100,8 @@ namespace Gadgetron{
 
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > buffer_;
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > image_headers_queue_;
+
+	hoNDArray<float_complext> MFI_C;
   };
 }
 #endif //gpuSpiralDeblurGadget_H
