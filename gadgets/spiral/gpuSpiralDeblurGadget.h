@@ -93,10 +93,10 @@ namespace Gadgetron{
     uint64d2 image_dimensions_recon_os_;
 
     cuNFFT_plan<float,2> nfft_plan_;
-    cuCgSolver<float_complext> cg_;
+    //cuCgSolver<float_complext> cg_;
     boost::shared_ptr< cuNDArray<float_complext> > csm_;
     boost::shared_ptr< cuNonCartesianSenseOperator<float,2> > E_;
-    boost::shared_ptr< cuCgPreconditioner<float_complext> > D_;
+    //boost::shared_ptr< cuCgPreconditioner<float_complext> > D_;
 
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > buffer_;
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > image_headers_queue_;

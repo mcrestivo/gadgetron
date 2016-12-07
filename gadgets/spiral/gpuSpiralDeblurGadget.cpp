@@ -10,7 +10,7 @@
 #include "check_CUDA.h"
 #include "b1_map.h"
 #include "GPUTimer.h"
-#include "vds.h"
+//#include "vds.h"
 #include "ismrmrd/xml.h"
 #include "GPUTimer.h"
 //#include "hoArmadillo.h"
@@ -247,7 +247,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
     //
 
 	GPUTimer *timer;
-
+	timer = new GPUTimer("Process time");
 	int flag = m1->getObjectPtr()->user_int[0];
 	if(flag > 0){
 		Nints = 1;
@@ -303,7 +303,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		float krmax = 0;
 		if(flag > 0){ index = 0; }
 		else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
-		GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
+		//GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
 		for (int i = 0; i < (samples_per_interleave_); i++) {
 			  //co_ptr[i*2]   = p3[i*3];
 			  //co_ptr[i*2+1] = p3[i*3+1];
@@ -312,8 +312,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					krmax = p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1];
 			  }
 		}
+		//std::cout << p3[(samples_per_interleave_-1)*3]*p3[(samples_per_interleave_-1)*3]+p3[(samples_per_interleave_-1)*3+1]*p3[(samples_per_interleave_-1)*3+1] << std::endl;
+		//std::cout << krmax << std::endl;
 		krmax = 2.0*std::sqrt(krmax);
-		std::cout << index << std::endl;
+		//std::cout << index << std::endl;
 		for (int i = 0; i < (samples_per_interleave_); i++) {
 			  //std::cout << i << " " << krmax << std::endl;	
 			  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
@@ -371,7 +373,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 	if(flag > 0){ interleave = 0; }
 
-    if (interleave == 0) {
+    if (interleave == 0 ) {
 
       std::vector<size_t> data_dimensions;
       data_dimensions.push_back(samples_per_interleave_*interleaves_);
@@ -522,13 +524,13 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-	double sample_time = (1.0*Tsamp_ns_) * 1e-9;
+	float sample_time = (1.0*Tsamp_ns_) * 1e-9;
 	if(flag > 0){
 		GDEBUG("Enter Map Scope \n");
 		//filter data
 		hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
 		for(int i =0; i < samples_per_interleave_; i++){
-			map_samples0_filt[i] *= exp(-.5*pow((i)/100.,2.));
+			map_samples0_filt[i] *= exp(-.5*pow((i)/200.,2.));
 		}
 
 		// Upload map data to device
@@ -549,7 +551,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			E->set_csm(csm_);
 			E->mult_csm_conj_sum( &image, &reg_image );
 			Map0_image = image.to_host();
-			write_nd_array<_complext>( Map0_image.get() , "Map_image.cplx" );
+			//write_nd_array<_complext>( Map0_image.get() , "Map_image.cplx" );
 			//map_num = 1;
 		}
 		else if( flag == 2){
@@ -578,12 +580,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
 				//std::cout << output_map[i] << std::endl;
 			}
-			write_nd_array<_real>( &output_map, "map.real" );
+			//write_nd_array<_real>( &output_map, "map.real" );
 		}
 	}
 	
 	else{
-		timer = new GPUTimer("Doing MFI");
+		
 
 		// Upload map data to device
 		cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
@@ -594,44 +596,49 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
 		E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
 		E->set_csm(csm_);
-		E->mult_csm_conj_sum( &image, &reg_image );	
+		//E->mult_csm_conj_sum( &image, &reg_image );	
 		// Output result
 		//boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
-		boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
-		write_nd_array<_complext>( host_image.get(), "Blurred_Image.cplx");
+		//boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
+		//write_nd_array<_complext>( host_image.get(), "Blurred_Image.cplx");
 		
 		//boost::shared_ptr< hoNDArray<_real> > output_map_ptr = read_nd_array<_real>("map.real");
 		//hoNDArray<_real> output_map = *(output_map_ptr.get());
 		//Compute MFI Coeffs
 		//timer = new GPUTimer("Read in coeffs");
+
+	if( true ){
 		int fmax = 600;
 		int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
+		std::complex<float> om (0.0,2*M_PI);
 		std::cout << "L = " << L << std::endl;
 
 		if( MFI_C.get_number_of_elements() == 0 ){
+			//timer = new GPUTimer("Process time");
 			arma::cx_fmat demod( samples_per_interleave_ , L );
 			MFI_C = hoNDArray<_complext>( fmax*2+1 , L );
 			arma::cx_fvec b( samples_per_interleave_ );
 			arma::cx_fvec x( L );
-			std::complex<float> I_f (0.0,1.0);
+			//std::complex<float> I_f (0.0,1.0);
 		
 			int j = 0;
 			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
-				for(int i = 0; i < samples_per_interleave_; i++) {
-					demod(i,j) = exp(I_f*(float)(2*M_PI*i*sample_time)*f);
+				for(float i = 0; i < samples_per_interleave_; i++) {
+					demod(i,j) = exp(om*i*sample_time*f);
 					//std::cout << demod(i,j) << std::endl;
 				}
 				j++;
 			}
 			j = 0;
 			for(float f = -fmax; f <= fmax; f++){
-				for(int i = 0; i < samples_per_interleave_; i++) {
-					b(i) = exp(I_f*(float)(2*M_PI*i*sample_time)*f);
+				for(float i = 0; i < samples_per_interleave_; i++) {
+					b(i) = exp(om*i*sample_time*f);
 				}
 				x = arma::solve(demod, b);
 				memcpy(MFI_C.get_data_ptr()+j*L, x.memptr(), L*sizeof(std::complex<float>));		
 				j++;
 			}
+			//delete timer;
 		}
 		//write_nd_array<_complext>( &MFI_C, "coeffs.cplx" );
 
@@ -657,20 +664,20 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			output_image[i] = 0;
 		}
 		hoNDArray<_complext> temp_image(&image_dims);
-		_complext I = _complext(0,1);
 		hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
 		int j = 0;
-		int indx = 0;
+		//int indx = 0;
 		for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
 			samples_demod = host_data_buffer_[set*slices_+slice];
+			_complext omega = _complext(0,2*M_PI*f*sample_time);
 			int i;
 			//std::cout << f <<std::endl;	
 			//timer = new GPUTimer("Demodulation");
 			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, I)
+			#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, omega)
 			#endif
 			for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
-				samples_demod[i] *= exp(I*2*M_PI*f*(i%samples_per_interleave_)*sample_time);
+				samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
 			}
 			//delete timer;
 			samples = samples_demod;
@@ -680,21 +687,22 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			//int i;
 			//timer = new GPUTimer("MFI Combination");
 			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(i, indx) shared(output_image, temp_image, image_dims, L, j, fmax)
+			#pragma omp parallel for default(none) private(i) shared(output_image, temp_image, image_dims, L, j, fmax)
 			#endif
 			for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
-				indx = output_map[i]+fmax;
+				//indx = output_map[i]+fmax;
 				//output_image[i] += reinterpret_cast<std::complex<float>>(MFI_C[indx*L+j]*temp_image[i]);
-				output_image[i] += (MFI_C[indx*L+j]*temp_image[i]);
+				output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*temp_image[i]);
 			}
 			//delete timer;
 			j++;
 		}
 		
-		write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
+		//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 		reg_image = output_image;
+	}
 
-		delete timer;
+		
 	
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
 
@@ -717,7 +725,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
       interleaves_counter_singleframe_[set*slices_+slice] = 0;
     }
     m1->release();
-	
+	delete timer;
     return GADGET_OK;
   }
 
