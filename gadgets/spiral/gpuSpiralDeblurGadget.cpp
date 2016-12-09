@@ -10,7 +10,7 @@
 #include "check_CUDA.h"
 #include "b1_map.h"
 #include "GPUTimer.h"
-//#include "vds.h"
+#include "vds.h"
 #include "ismrmrd/xml.h"
 #include "GPUTimer.h"
 //#include "hoArmadillo.h"
@@ -275,7 +275,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	bool is_last_scan_in_slice = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_LAST_IN_SLICE);
 
     if (!prepared_) {
-
+		
+		int traj_attached = 0;
 		double sample_time = (1.0*Tsamp_ns_) * 1e-9;
 		samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
 
@@ -295,35 +296,76 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			host_weights_->create(&trajectory_dimensions);
 		}
 
-		  {
-		float *p3 = m3->getObjectPtr()->get_data_ptr();
-		float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
-		float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
-		int index;
-		float krmax = 0;
-		if(flag > 0){ index = 0; }
-		else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
-		//GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
-		for (int i = 0; i < (samples_per_interleave_); i++) {
-			  //co_ptr[i*2]   = p3[i*3];
-			  //co_ptr[i*2+1] = p3[i*3+1];
-			  //we_ptr[i] = p3[i*3+2];
-			  if(p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1] > krmax){
-					krmax = p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1];
-			  }
-		}
-		//std::cout << p3[(samples_per_interleave_-1)*3]*p3[(samples_per_interleave_-1)*3]+p3[(samples_per_interleave_-1)*3+1]*p3[(samples_per_interleave_-1)*3+1] << std::endl;
-		//std::cout << krmax << std::endl;
-		krmax = 2.0*std::sqrt(krmax);
-		//std::cout << index << std::endl;
-		for (int i = 0; i < (samples_per_interleave_); i++) {
-			  //std::cout << i << " " << krmax << std::endl;	
-			  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
-			  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax;
-			  we_ptr[index+i] = p3[i*3+2]/krmax;
+		if(traj_attached) {
+			float *p3 = m3->getObjectPtr()->get_data_ptr();
+			float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
+			float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
+			int index;
+			float krmax = 0;
+			if(flag > 0){ index = 0; }
+			else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
+			//GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
+			for (int i = 0; i < (samples_per_interleave_); i++) {
+				  //co_ptr[i*2]   = p3[i*3];
+				  //co_ptr[i*2+1] = p3[i*3+1];
+				  //we_ptr[i] = p3[i*3+2];
+				  if(p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1] > krmax){
+						krmax = p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1];
+				  }
+			}
+			//std::cout << p3[(samples_per_interleave_-1)*3]*p3[(samples_per_interleave_-1)*3]+p3[(samples_per_interleave_-1)*3+1]*p3[(samples_per_interleave_-1)*3+1] << std::endl;
+			//std::cout << krmax << std::endl;
+			krmax = 2.0*std::sqrt(krmax);
+			//std::cout << index << std::endl;
+			for (int i = 0; i < (samples_per_interleave_); i++) {
+				  //std::cout << i << " " << krmax << std::endl;	
+				  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
+				  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax;
+				  we_ptr[index+i] = p3[i*3+2]/krmax;
+			}
+
 		}
 
-	}
+		if (!traj_attached) {
+			double sample_time = (1.0*Tsamp_ns_) * 1e-9;
+			samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
+			int     nfov   = 1;
+			int     ngmax  = 1e5;       /*  maximum number of gradient samples      */
+			double  *xgrad;             /*  x-component of gradient.                */
+			double  *ygrad;             /*  y-component of gradient.                */
+			double  *x_trajectory;
+			double  *y_trajectory;
+			double  *weighting;
+			int     ngrad;
+			if (flag > 0) {
+				//gmax_ = (m1->getObjectPtr()->user_float[1])/10.;
+				//smax_ = 3*((m1->getObjectPtr()->user_float[3])/10.);
+				//krmax_ = 2*((m1->getObjectPtr()->user_float[4])/10000.);
+				double fov2_ = (m1->getObjectPtr()->user_float[5]);
+				calc_vds(3*((m1->getObjectPtr()->user_float[3])/10.),(m1->getObjectPtr()->user_float[1])/10.,sample_time,sample_time,Nints,&fov2_,nfov,2*((m1->getObjectPtr()->user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
+			}
+			else{
+				calc_vds(smax_,gmax_,sample_time,sample_time,Nints,&fov_,nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
+			}
+			calc_traj(xgrad, ygrad, samples_per_interleave_, Nints, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
+			{
+				float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
+				float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
+				for (int i = 0; i < (samples_per_interleave_*Nints); i++) {
+				  //std::cout << "data=" << map_samples0[i] << std::endl;
+				  //co_ptr[i*2]   = -x_trajectory[i]/(2*M_PI);
+				  //co_ptr[i*2+1] = -y_trajectory[i]/(2*M_PI);
+				  co_ptr[i*2]   = -x_trajectory[i]/(2);
+				  co_ptr[i*2+1] = -y_trajectory[i]/(2);
+				  we_ptr[i] = weighting[i];
+				}
+			}
+			delete [] xgrad;
+			delete [] ygrad;
+			delete [] x_trajectory;
+			delete [] y_trajectory;
+			delete [] weighting;
+		}
 
 		if( is_last_scan_in_slice || Nints == 1){
 			// Setup the NFFT plan
@@ -530,7 +572,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		//filter data
 		hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
 		for(int i =0; i < samples_per_interleave_; i++){
-			map_samples0_filt[i] *= exp(-.5*pow((i)/200.,2.));
+			map_samples0_filt[i] *= exp(-.5*pow(i/400.,2.) );
 		}
 
 		// Upload map data to device
@@ -580,7 +622,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
 				//std::cout << output_map[i] << std::endl;
 			}
-			//write_nd_array<_real>( &output_map, "map.real" );
+			write_nd_array<_real>( &output_map, "map.real" );
 		}
 	}
 	
