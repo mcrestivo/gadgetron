@@ -1,0 +1,157 @@
+// Deblurring stand alone Gadget
+
+// Read in three scans (2 field map scans, 1 full resolution image)
+// Reconstruct Field map
+// Save Fied map
+// Reconstruct MFI base images
+// Read-in or calculate MFI coefficients
+// Reconstruct final image
+
+#include "cuNFFT.h"
+#include "radial_utilities.h"
+#include "vector_td_utilities.h"
+#include "hoNDArray_fileio.h"
+#include "cuNDArray_fileio.h"
+#include "cuNDArray_elemwise.h"
+#include "GPUTimer.h"
+#include "parameterparser.h"
+#include "complext.h"
+#include "vds.h"
+
+#include <iostream>
+
+using namespace std;
+using namespace Gadgetron;
+
+// Define desired precision
+typedef float _real;
+typedef complext<_real> _complext;
+typedef reald<_real,2>::Type _reald2;
+typedef cuNFFT_plan<_real,2> plan_type;
+
+int main( int argc, char** argv)
+{
+
+//
+// Parse command line
+//
+
+ParameterParser parms;
+parms.add_parameter( 'd', COMMAND_LINE_STRING, 1, "Input samples file name (.cplx)", true );
+parms.add_parameter( 'd0', COMMAND_LINE_STRING, 1, "Input samples 1st shot file name (.cplx)", true );
+parms.add_parameter( 'd1', COMMAND_LINE_STRING, 1, "Input samples 2nd shot file name (.cplx)", true );
+parms.add_parameter( 'r', COMMAND_LINE_STRING, 1, "Output image file name (.cplx)", true, "result.cplx" );
+parms.add_parameter( 'm', COMMAND_LINE_INT,    1, "Output field map file name (.real)", true, "OffResMap.real" );
+parms.add_parameter( 's', COMMAND_LINE_INT,    1, "Matrix size", true );
+parms.add_parameter( 'o', COMMAND_LINE_INT,    1, "Oversampled matrix size", true );
+parms.add_parameter( 'k', COMMAND_LINE_FLOAT,  1, "Kernel width", true, "5.5" );
+
+parms.parse_parameter_list(argc, argv);
+if( parms.all_required_parameters_set() ){
+  cout << " Running reconstruction with the following parameters: " << endl;
+  parms.print_parameter_list();
+}
+else{
+  cout << " Some required parameters are missing: " << endl;
+  parms.print_parameter_list();
+  parms.print_usage();
+  return 1;
+}
+
+GPUTimer *timer;
+
+// Load samples from disk
+
+boost::shared_ptr< hoNDArray<_complext> > data_samples = read_nd_array<_complext>((char*)parms.get_parameter('d')->get_string_value());
+boost::shared_ptr< hoNDArray<_complext> > map_samples0 = read_nd_array<_complext>((char*)parms.get_parameter('d0')->get_string_value());
+boost::shared_ptr< hoNDArray<_complext> > map_samples1 = read_nd_array<_complext>((char*)parms.get_parameter('d1')->get_string_value());
+
+// Setup OffResMap parameters
+uint64d2 matrix_size = uint64d2(parms.get_parameter('s')->get_int_value(), parms.get_parameter('m')->get_int_value());
+uint64d2 matrix_size_os = uint64d2(parms.get_parameter('o')->get_int_value(), parms.get_parameter('o')->get_int_value());
+_real kernel_width = parms.get_parameter('k')->get_float_value();
+unsigned int num_profiles = map_samples0->get_size(1);
+unsigned int samples_per_profile = map_samples0->get_size(0);
+
+double smax_ =14414.4;
+double gmax_ =2.4;
+double interleaves = double(num_profiles);
+double dt = 3.9e-6;
+double fov_ = 40;
+double krmax_ = 1.6;
+double sample_time = samples_per_profile*dt;
+
+// Compute trajectories
+timer = new GPUTimer("Computing sprial trajectories");
+ /*	call c-function here to calculate gradients */
+int     nfov   = 1;         /*  number of fov coefficients.             */
+int     ngmax  = 1e5;       /*  maximum number of gradient samples      */
+double  *xgrad;             /*  x-component of gradient.                */
+double  *ygrad;             /*  y-component of gradient.                */
+double  *x_trajectory;
+double  *y_trajectory;
+double  *weighting;
+int     ngrad;
+//int     count;
+calc_vds(smax_,gmax_,sample_time,sample_time,interleaves,&fov_,nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
+/* Calcualte the trajectory and weights*/
+calc_traj(xgrad, ygrad, samples_per_profile, interleaves, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
+boost::shared_ptr< hoNDArray<floatd2> > host_traj_ = boost::shared_ptr< hoNDArray<floatd2> >(new hoNDArray<floatd2>);
+boost::shared_ptr< hoNDArray<float> > host_weights_ = boost::shared_ptr< hoNDArray<float> >(new hoNDArray<float>);
+std::vector<size_t> trajectory_dimensions;
+trajectory_dimensions.push_back(samples_per_profile*interleaves);
+host_traj_->create(&trajectory_dimensions);
+host_weights_->create(&trajectory_dimensions);
+{
+  float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
+  float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
+  for (int i = 0; i < (samples_per_profile*interleaves); i++) {
+  co_ptr[i*2]   = -x_trajectory[i]/2;
+  co_ptr[i*2+1] = -y_trajectory[i]/2;
+  we_ptr[i] = weighting[i];
+  }
+}
+delete [] xgrad;
+delete [] ygrad;
+delete [] x_trajectory;
+delete [] y_trajectory;
+delete [] weighting;
+delete timer;
+
+// Initialize plan
+timer = new GPUTimer("Initializing plan");
+plan_type plan( matrix_size, matrix_size_os, kernel_width );
+delete timer;
+
+// Preprocess
+timer = new GPUTimer("NFFT preprocessing");
+boost::shared_ptr< cuNDArray<_reald2> > traj = boost::shared_ptr< cuNDArray<_reald2> >( new cuNDArray<_reald2>(*host_traj_) );
+boost::shared_ptr< cuNDArray<float> > dcw_buffer_ = boost::shared_ptr< cuNDArray<float> >( new cuNDArray<float>(*host_weights_) );
+write_nd_array<_reald2>( host_traj_.get() , "traj.real" );
+plan.preprocess( traj.get() , plan_type::NFFT_PREP_NC2C );
+delete timer;
+
+// Setup resulting image array
+vector<size_t> image_dims = to_std_vector(matrix_size);
+cuNDArray<_complext> image(&image_dims);
+
+// Upload map data to device
+timer = new GPUTimer("Uploading samples to device");
+cuNDArray<_complext> samples(map_samples0.get());
+delete timer;
+
+// Gridder
+timer = new GPUTimer("Computing adjoint nfft (gridding)");
+plan.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+delete timer;
+
+// Output result
+timer = new GPUTimer("Output result to disk");
+boost::shared_ptr< hoNDArray<_complext> > host_image = image.to_host();
+write_nd_array<_complext>( host_image.get(), (char*)parms.get_parameter('r')->get_string_value());
+boost::shared_ptr< hoNDArray<_real> > host_norm = abs(&image)->to_host();
+write_nd_array<_real>( host_norm.get(), "result.real" );
+delete timer;
+
+return 0;
+}
