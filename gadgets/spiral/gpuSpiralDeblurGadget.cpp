@@ -572,7 +572,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		//filter data
 		hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
 		for(int i =0; i < samples_per_interleave_; i++){
-			map_samples0_filt[i] *= exp(-.5*pow(i/400.,2.) );
+			map_samples0_filt[i] *= exp(-.5*pow(i/200.,2.) );
 		}
 
 		// Upload map data to device
