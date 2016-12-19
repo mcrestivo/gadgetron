@@ -302,10 +302,11 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
 			int index;
 			float krmax = 0;
+			int i;
 			if(flag > 0){ index = 0; }
 			else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
 			//GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
-			for (int i = 0; i < (samples_per_interleave_); i++) {
+			for (i = samples_per_interleave_-100; i < (samples_per_interleave_); i++) {
 				  //co_ptr[i*2]   = p3[i*3];
 				  //co_ptr[i*2+1] = p3[i*3+1];
 				  //we_ptr[i] = p3[i*3+2];
@@ -317,7 +318,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			//std::cout << krmax << std::endl;
 			krmax = 2.0*std::sqrt(krmax);
 			//std::cout << index << std::endl;
-			for (int i = 0; i < (samples_per_interleave_); i++) {
+			#ifdef USE_OMP
+			#pragma omp parallel for default(none) private(i) shared(co_ptr, we_ptr, p3, krmax, index)
+			#endif
+			for (i = 0; i < (samples_per_interleave_); i++) {
 				  //std::cout << i << " " << krmax << std::endl;	
 				  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
 				  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax;
