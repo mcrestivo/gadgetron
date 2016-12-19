@@ -39,7 +39,7 @@ namespace Gadgetron{
     GADGET_PROPERTY(buffer_convolution_oversampling_factor, float, "Oversampling used in buffer convolution", 1.25);
     GADGET_PROPERTY(reconstruction_os_factor_x, float, "Oversampling for reconstruction in x-direction", 1.0);
     GADGET_PROPERTY(reconstruction_os_factor_y, float, "Oversampling for reconstruction in y-direction", 1.0);
-	boost::shared_ptr< hoNDArray<float_complext> > Map0_image;
+	cuNDArray<float_complext> reg_image0;
 	hoNDArray<float> output_map;
 
     virtual int process_config(ACE_Message_Block* mb);
@@ -61,6 +61,7 @@ namespace Gadgetron{
     boost::shared_array<long> image_counter_;
     int device_number_;
 	int flag_old = 0;
+	int traj_attached;
 
     long    Tsamp_ns_;
     long    Nints_;
@@ -72,6 +73,7 @@ namespace Gadgetron{
     double  smax_;
     double  krmax_;
     double  fov_;
+	double sample_time;
 
     bool prepared_;
     bool use_multiframe_grouping_;

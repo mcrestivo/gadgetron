@@ -13,7 +13,6 @@
 #include "vds.h"
 #include "ismrmrd/xml.h"
 #include "GPUTimer.h"
-//#include "hoArmadillo.h"
 
 #include <algorithm>
 #include <vector>
@@ -243,49 +242,45 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	  GadgetContainerMessage< hoNDArray< std::complex<float> > > *m2,
 	  GadgetContainerMessage< hoNDArray<float> > *m3)
   {
-    // Noise should have been consumed by the noise adjust, but just in case...
-    //
-
+    // Gadget process begin
+    
+	//Initialize timer for testing purposes (commented out)
 	GPUTimer *timer;
 	timer = new GPUTimer("Process time");
+
+	//Check user_int[0], 1 & 2 = map acquisition, 0 = image data
 	int flag = m1->getObjectPtr()->user_int[0];
 	if(flag > 0){
-		Nints = 1;
+		Nints = 1; //map is always single shot, variable nints_ is defined for image data
 		interleaves_ = static_cast<int>(Nints);
-		if(flag_old == 0){ prepared_ = false;}
+		if(flag_old == 0){ prepared_ = false;} //If the flag changes, then the NFFT needs to be re-prepared
 		flag_old = flag;
 	}
 	if(flag == 0){
 		Nints = Nints_;
 		interleaves_ = static_cast<int>(Nints);
-		//prepared_ = false;
-		if(flag_old != flag){ prepared_ = false;}
+		if(flag_old != flag){ prepared_ = false;} //If the flag changes, then the NFFT needs to be re-prepared
 		flag_old = flag;
 	}
-	//int flag = 0;	
-	//std::cout << "flag set to " << flag << std::endl;
-    //write_nd_array< std::complex<float> >( m2->getObjectPtr(), "nd_array_data.cplx" );
 
+	//Initialize and check if acquisition is noise and if it is the last in the slice
     bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
     if (is_noise) {
       m1->release();
       return GADGET_OK;
     }
-
 	bool is_last_scan_in_slice = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_LAST_IN_SLICE);
 
+	//Prepare the NFFT on the GPU, if not previously done
     if (!prepared_) {
-		
-		int traj_attached = 0;
-		double sample_time = (1.0*Tsamp_ns_) * 1e-9;
-		samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
 
-		GDEBUG("Using %d samples per interleave\n", samples_per_interleave_);
-		GDEBUG("Using %d interleaves\n", interleaves_);
-
-		/* Calcualte the trajectory and weights*/
-		//calc_traj(xgrad, ygrad, samples_per_interleave_, Nints, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
+		//Initialize traj and weight parameters if it is the first interleave or a map acquisiton & allocate data buffer
 		if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0 || flag > 0){
+			
+			traj_attached = 0; //1 = use attached trajectory, 0 = calc trajectory using calc_vds
+			sample_time = (1.0*Tsamp_ns_) * 1e-9;
+			samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
+
 			host_traj_ = boost::shared_ptr< hoNDArray<floatd2> >(new hoNDArray<floatd2>);
 			host_weights_ = boost::shared_ptr< hoNDArray<float> >(new hoNDArray<float>);
 
@@ -294,8 +289,23 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 			host_traj_->create(&trajectory_dimensions);
 			host_weights_->create(&trajectory_dimensions);
+			
+			//Setup data buffer
+			std::vector<size_t> data_dimensions;
+			data_dimensions.push_back(samples_per_interleave_*interleaves_);
+			data_dimensions.push_back(m1->getObjectPtr()->active_channels);
+			host_data_buffer_ = boost::shared_array< hoNDArray<float_complext> > (new hoNDArray<float_complext>[slices_*sets_]);
+			if (!host_data_buffer_.get()) {
+				GDEBUG("Unable to allocate array for host data buffer\n");
+				return GADGET_FAIL;
+			}
+			for (unsigned int i = 0; i < slices_*sets_; i++) {
+			host_data_buffer_[i].create(&data_dimensions);
+			host_data_buffer_[i].fill(0.0f);
+      		}
 		}
 
+		//Read in traj and weight if attached (in m3)
 		if(traj_attached) {
 			float *p3 = m3->getObjectPtr()->get_data_ptr();
 			float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
@@ -303,26 +313,19 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			int index;
 			float krmax = 0;
 			int i;
-			if(flag > 0){ index = 0; }
+			if(flag > 0){ index = 0; } //map interleave is always 0
 			else{ index = m1->getObjectPtr()->idx.kspace_encode_step_1*samples_per_interleave_; }
-			//GDEBUG("Number of elements: %d, samples_per_interleave_=%d, Nints=%d \n", m3->getObjectPtr()->get_number_of_elements(), samples_per_interleave_, Nints);
-			for (i = samples_per_interleave_-100; i < (samples_per_interleave_); i++) {
-				  //co_ptr[i*2]   = p3[i*3];
-				  //co_ptr[i*2+1] = p3[i*3+1];
-				  //we_ptr[i] = p3[i*3+2];
+			//Find krmax for nomalization, note that not always the last sample because of girf correction
+			for (i = samples_per_interleave_-20; i < (samples_per_interleave_); i++) {
 				  if(p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1] > krmax){
 						krmax = p3[i*3]*p3[i*3]+p3[i*3+1]*p3[i*3+1];
 				  }
 			}
-			//std::cout << p3[(samples_per_interleave_-1)*3]*p3[(samples_per_interleave_-1)*3]+p3[(samples_per_interleave_-1)*3+1]*p3[(samples_per_interleave_-1)*3+1] << std::endl;
-			//std::cout << krmax << std::endl;
 			krmax = 2.0*std::sqrt(krmax);
-			//std::cout << index << std::endl;
 			#ifdef USE_OMP
 			#pragma omp parallel for default(none) private(i) shared(co_ptr, we_ptr, p3, krmax, index)
 			#endif
-			for (i = 0; i < (samples_per_interleave_); i++) {
-				  //std::cout << i << " " << krmax << std::endl;	
+			for (i = 0; i < (samples_per_interleave_); i++) {	
 				  co_ptr[2*index+i*2]   = p3[i*3]/krmax;
 				  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax;
 				  we_ptr[index+i] = p3[i*3+2]/krmax;
@@ -330,9 +333,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		}
 
+		//Calcualte the trajectory and weights if not attached
 		if (!traj_attached) {
-			double sample_time = (1.0*Tsamp_ns_) * 1e-9;
-			samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
+			//Setup calc_vds parameters
 			int     nfov   = 1;
 			int     ngmax  = 1e5;       /*  maximum number of gradient samples      */
 			double  *xgrad;             /*  x-component of gradient.                */
@@ -341,13 +344,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			double  *y_trajectory;
 			double  *weighting;
 			int     ngrad;
+			//Map trajecotry is different, parameters defined in user_floats
 			if (flag > 0) {
-				//gmax_ = (m1->getObjectPtr()->user_float[1])/10.;
-				//smax_ = 3*((m1->getObjectPtr()->user_float[3])/10.);
-				//krmax_ = 2*((m1->getObjectPtr()->user_float[4])/10000.);
 				double fov2_ = (m1->getObjectPtr()->user_float[5]);
 				calc_vds(3*((m1->getObjectPtr()->user_float[3])/10.),(m1->getObjectPtr()->user_float[1])/10.,sample_time,sample_time,Nints,&fov2_,nfov,2*((m1->getObjectPtr()->user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
 			}
+			//Otherwise use calc_vds parameters from header (set in process_config_
 			else{
 				calc_vds(smax_,gmax_,sample_time,sample_time,Nints,&fov_,nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
 			}
@@ -356,9 +358,6 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
 				float* we_ptr =  reinterpret_cast<float*>(host_weights_->get_data_ptr());
 				for (int i = 0; i < (samples_per_interleave_*Nints); i++) {
-				  //std::cout << "data=" << map_samples0[i] << std::endl;
-				  //co_ptr[i*2]   = -x_trajectory[i]/(2*M_PI);
-				  //co_ptr[i*2+1] = -y_trajectory[i]/(2*M_PI);
 				  co_ptr[i*2]   = -x_trajectory[i]/(2);
 				  co_ptr[i*2+1] = -y_trajectory[i]/(2);
 				  we_ptr[i] = weighting[i];
@@ -371,12 +370,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			delete [] weighting;
 		}
 
+		//After traj/weight data is loaded in buffers, upload to GPU, setup, and prepocess NFFT
 		if( is_last_scan_in_slice || Nints == 1){
-			// Setup the NFFT plan
-			//
+
 			cuNDArray<floatd2> traj(*host_traj_);
-			
-			//write_nd_array<floatd2>( &traj, "traj.real" );
 			dcw_buffer_ = boost::shared_ptr< cuNDArray<float> >( new cuNDArray<float>(*host_weights_) );
 
 			nfft_plan_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
@@ -388,8 +385,6 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 
     // Allocate various counters if they are NULL
-    //
-
     if( !image_counter_.get() ){
       image_counter_ = boost::shared_array<long>(new long[slices_*sets_]);
       for( unsigned int i=0; i<slices_*sets_; i++ )
@@ -409,52 +404,17 @@ typedef cuNFFT_plan<_real,2> plan_type;
     }
 
     // Define some utility variables
-    //
-
     unsigned int samples_to_copy = m1->getObjectPtr()->number_of_samples-samples_to_skip_end_;
     unsigned int interleave = m1->getObjectPtr()->idx.kspace_encode_step_1;
     unsigned int slice = m1->getObjectPtr()->idx.slice;
     unsigned int set = m1->getObjectPtr()->idx.set;
     unsigned int samples_per_channel =  samples_per_interleave_*interleaves_;
 
-	if(flag > 0){ interleave = 0; }
-
-    if (interleave == 0 ) {
-
-      std::vector<size_t> data_dimensions;
-      data_dimensions.push_back(samples_per_interleave_*interleaves_);
-      data_dimensions.push_back(m1->getObjectPtr()->active_channels);
-
-      host_data_buffer_ = boost::shared_array< hoNDArray<float_complext> >
-	(new hoNDArray<float_complext>[slices_*sets_]);
-      GDEBUG("Buffer slices %d\n", slices_);
-	  GDEBUG("Buffer sets %d\n", sets_);
-      if (!host_data_buffer_.get()) {
-	GDEBUG("Unable to allocate array for host data buffer\n");
-	return GADGET_FAIL;
-      }
-
-      for (unsigned int i = 0; i < slices_*sets_; i++) {
-	host_data_buffer_[i].create(&data_dimensions);
-	host_data_buffer_[i].fill(0.0f);
-      }
-    }
-
     // Some book-keeping to keep track of the frame count
-    //
-
     interleaves_counter_singleframe_[set*slices_+slice]++;
     interleaves_counter_multiframe_[set*slices_+slice]++;
 
-    // Duplicate the profile to avoid double deletion in case problems are encountered below.
-    // Enque profile until all profiles for the reconstruction have been received.
-    //
-    
-    //buffer_[set*slices_+slice].enqueue_tail(duplicate_profile(m1));
-    
-    // Copy profile into the accumulation buffer for csm/regularization estimation
-    //
-
+	//Copy interleave data into buffer
     ISMRMRD::AcquisitionHeader base_head = *m1->getObjectPtr();
 
     if (samples_to_skip_end_ == -1) {
@@ -462,334 +422,234 @@ typedef cuNFFT_plan<_real,2> plan_type;
       GDEBUG("Adjusting samples_to_skip_end_ = %d\n", samples_to_skip_end_);
     }
 
-     std::complex<float>* data_ptr = reinterpret_cast< std::complex<float>* >
-      (host_data_buffer_[set*slices_+slice].get_data_ptr());
-
-    std::complex<float>* profile_ptr = m2->getObjectPtr()->get_data_ptr();
+    std::complex<float>* data_ptr = reinterpret_cast< std::complex<float>* > (host_data_buffer_[set*slices_+slice].get_data_ptr());
+	std::complex<float>* profile_ptr = m2->getObjectPtr()->get_data_ptr();
 
     for (unsigned int c = 0; c < m1->getObjectPtr()->active_channels; c++) {
-      memcpy(data_ptr+c*samples_per_channel+interleave*samples_to_copy,
-	     profile_ptr+c*m1->getObjectPtr()->number_of_samples, samples_to_copy*sizeof(std::complex<float>));
+    	memcpy(data_ptr+c*samples_per_channel+interleave*samples_to_copy,profile_ptr+c*m1->getObjectPtr()->number_of_samples, samples_to_copy*sizeof(std::complex<float>));
     }
 
     // Have we received sufficient data for a new frame?
-    //
-
-
     if (is_last_scan_in_slice || Nints == 1) {
 
-      // This was the final profile of a frame
-      //
+		// This was the final profile of a frame (check)
+		if( Nints%interleaves_counter_singleframe_[set*slices_+slice] ){
+			GDEBUG("Unexpected number of interleaves encountered in frame\n");
+			return GADGET_FAIL;
+		}	
 
-      if( Nints%interleaves_counter_singleframe_[set*slices_+slice] ){
-	GDEBUG("Unexpected number of interleaves encountered in frame\n");
-	return GADGET_FAIL;
-      }
+		// Prepare an image header for this frame
+		GadgetContainerMessage<ISMRMRD::ImageHeader> *header = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
+		ISMRMRD::AcquisitionHeader *base_head = m1->getObjectPtr();
 
-      // Has the acceleration factor changed?
-      //
+		  {
+		// Initialize header to all zeroes (there is a few fields we do not set yet)
+		ISMRMRD::ImageHeader tmp;
+		*(header->getObjectPtr()) = tmp;
+		  }
 
-      if( acceleration_factor_ != Nints/interleaves_counter_singleframe_[set*slices_+slice] ){
+		header->getObjectPtr()->version = base_head->version;
 
-	GDEBUG("Change of acceleration factor detected\n");
-	acceleration_factor_ =  Nints/interleaves_counter_singleframe_[set*slices_+slice];
+		header->getObjectPtr()->matrix_size[0] = image_dimensions_recon_[0];
+		header->getObjectPtr()->matrix_size[1] = image_dimensions_recon_[1];
+		header->getObjectPtr()->matrix_size[2] = acceleration_factor_;
 
-	// The encoding operator needs to have its domain/codomain dimensions set accordingly
-	//
-	
-      }
-	
+		header->getObjectPtr()->field_of_view[0] = fov_vec_[0];
+		header->getObjectPtr()->field_of_view[1] = fov_vec_[1];
+		header->getObjectPtr()->field_of_view[2] = fov_vec_[2];
 
-      // Prepare an image header for this frame
-      //
+		header->getObjectPtr()->channels = 1;//base_head->active_channels;
+		header->getObjectPtr()->slice = base_head->idx.slice;
+		header->getObjectPtr()->set = base_head->idx.set;
 
-      GadgetContainerMessage<ISMRMRD::ImageHeader> *header = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
-      ISMRMRD::AcquisitionHeader *base_head = m1->getObjectPtr();
+		header->getObjectPtr()->acquisition_time_stamp = base_head->acquisition_time_stamp;
+		memcpy(header->getObjectPtr()->physiology_time_stamp, base_head->physiology_time_stamp, sizeof(uint32_t)*ISMRMRD::ISMRMRD_PHYS_STAMPS);
 
-      {
-	// Initialize header to all zeroes (there is a few fields we do not set yet)
-	ISMRMRD::ImageHeader tmp;
-	*(header->getObjectPtr()) = tmp;
-      }
+		memcpy(header->getObjectPtr()->position, base_head->position, sizeof(float)*3);
+		memcpy(header->getObjectPtr()->read_dir, base_head->read_dir, sizeof(float)*3);
+		memcpy(header->getObjectPtr()->phase_dir, base_head->phase_dir, sizeof(float)*3);
+		memcpy(header->getObjectPtr()->slice_dir, base_head->slice_dir, sizeof(float)*3);
+		memcpy(header->getObjectPtr()->patient_table_position, base_head->patient_table_position, sizeof(float)*3);
 
-      header->getObjectPtr()->version = base_head->version;
+		header->getObjectPtr()->data_type = ISMRMRD::ISMRMRD_CXFLOAT;
+		header->getObjectPtr()->image_index = image_counter_[set*slices_+slice]++; 
+		header->getObjectPtr()->image_series_index = set*slices_+slice;
 
-      header->getObjectPtr()->matrix_size[0] = image_dimensions_recon_[0];
-      header->getObjectPtr()->matrix_size[1] = image_dimensions_recon_[1];
-      header->getObjectPtr()->matrix_size[2] = acceleration_factor_;
+		if( !use_multiframe_grouping_ || 
+		(use_multiframe_grouping_ && interleaves_counter_multiframe_[set*slices_+slice] == Nints) ){
 
-      header->getObjectPtr()->field_of_view[0] = fov_vec_[0];
-      header->getObjectPtr()->field_of_view[1] = fov_vec_[1];
-      header->getObjectPtr()->field_of_view[2] = fov_vec_[2];
+			unsigned int num_coils = m1->getObjectPtr()->active_channels;
 
-      header->getObjectPtr()->channels = 1;//base_head->active_channels;
-      header->getObjectPtr()->slice = base_head->idx.slice;
-      header->getObjectPtr()->set = base_head->idx.set;
+			// Compute coil images from the fully sampled data buffer
 
-      header->getObjectPtr()->acquisition_time_stamp = base_head->acquisition_time_stamp;
-      memcpy(header->getObjectPtr()->physiology_time_stamp, base_head->physiology_time_stamp, sizeof(uint32_t)*ISMRMRD::ISMRMRD_PHYS_STAMPS);
+			//Setup image arrays
+			std::vector<size_t> image_dims;
+			image_dims.push_back(image_dimensions_recon_[0]);
+			image_dims.push_back(image_dimensions_recon_[1]);
+			image_dims.push_back(num_coils);
+			cuNDArray<float_complext> image(&image_dims);
 
-      memcpy(header->getObjectPtr()->position, base_head->position, sizeof(float)*3);
-      memcpy(header->getObjectPtr()->read_dir, base_head->read_dir, sizeof(float)*3);
-      memcpy(header->getObjectPtr()->phase_dir, base_head->phase_dir, sizeof(float)*3);
-      memcpy(header->getObjectPtr()->slice_dir, base_head->slice_dir, sizeof(float)*3);
-      memcpy(header->getObjectPtr()->patient_table_position, base_head->patient_table_position, sizeof(float)*3);
+			// Setup output image array
+			image_dims.pop_back();
+			cuNDArray<_complext> reg_image(&image_dims);
+			hoNDArray<_complext> output_image(&image_dims);
 
-      header->getObjectPtr()->data_type = ISMRMRD::ISMRMRD_CXFLOAT;
-      header->getObjectPtr()->image_index = image_counter_[set*slices_+slice]++; 
-      header->getObjectPtr()->image_series_index = set*slices_+slice;
+			float sample_time = (1.0*Tsamp_ns_) * 1e-9;
 
-      // Enque header until we are ready to assemble a Sense job
-      //
-
-      //image_headers_queue_[set*slices_+slice].enqueue_tail(header);
-
-      // Check if it is time to reconstruct.
-      // I.e. prepare and pass a Sense job downstream...
-      //
-
-      if( !use_multiframe_grouping_ || 
-	  (use_multiframe_grouping_ && interleaves_counter_multiframe_[set*slices_+slice] == Nints) ){
-
-	unsigned int num_coils = m1->getObjectPtr()->active_channels;
-	
-	// Compute coil images from the fully sampled data buffer
-	//
-
-	std::vector<size_t> image_dims;
-	image_dims.push_back(image_dimensions_recon_[0]);
-	image_dims.push_back(image_dimensions_recon_[1]);
-	image_dims.push_back(num_coils);
-	
-	cuNDArray<float_complext> image(&image_dims);
-	// Setup output image array
-	image_dims.pop_back();
-	cuNDArray<_complext> reg_image(&image_dims);
-	hoNDArray<_complext> output_image(&image_dims);
-	//cuNDArray<float_complext> data(&host_data_buffer_[set*slices_+slice]);
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-	float sample_time = (1.0*Tsamp_ns_) * 1e-9;
-	if(flag > 0){
-		GDEBUG("Enter Map Scope \n");
-		//filter data
-		hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
-		for(int i =0; i < samples_per_interleave_; i++){
-			map_samples0_filt[i] *= exp(-.5*pow(i/200.,2.) );
-		}
-
-		// Upload map data to device
-		cuNDArray<_complext> samples(map_samples0_filt);
-
-		// Gridder first map data
-		nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
-
-	
-		// Setup SENSE opertor and compute CSM
-		//boost::shared_ptr< cuNDArray<float_complext> > csm;
-		//boost::shared_ptr< hoNDArray<_complext> > host_image0 = boost::shared_ptr< hoNDArray<_complext> >(new hoNDArray<_complext>);
-		//GDEBUG("But not this far\n");
-		boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
-		if( flag == 1){
-			csm_ = estimate_b1_map<float,2>( &image );
-			E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-			E->set_csm(csm_);
-			E->mult_csm_conj_sum( &image, &reg_image );
-			Map0_image = image.to_host();
-			//write_nd_array<_complext>( Map0_image.get() , "Map_image.cplx" );
-			//map_num = 1;
-		}
-		else if( flag == 2){
-			cuNDArray<_complext> reg_image1(&image_dims);
-			//host_image0 = read_nd_array<_complext>("Map_image.cplx");
-			//host_image0->create(image_dims);
-			cuNDArray<_complext> tempcuarray(Map0_image.get());
-			//std::cout << "dimensions = " << host_image0->get_size(0) << " " << host_image0->get_size(1) << std::endl;
-			csm_ = estimate_b1_map<float,2>( &tempcuarray );
-			E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-			E->set_csm(csm_);
-			E->mult_csm_conj_sum( &image, &reg_image1 );	
-			E->mult_csm_conj_sum( &tempcuarray, &reg_image );
-			//map_num = 0;
-		
-		//boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() ); 	
-			boost::shared_ptr< hoNDArray<_complext> > host_image0 = reg_image.to_host();
-			boost::shared_ptr< hoNDArray<_complext> > host_image1 = reg_image1.to_host();
-		
-		//Comput B0 Map on host
-			hoNDArray<_complext> temp0 = *host_image0;
-			hoNDArray<_complext> temp1 = *host_image1;
-			output_map = *(new hoNDArray<_real>(&image_dims));
-			//hoNDArray<_real> output_map(&image_dims);
-			for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
-				output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
-				//std::cout << output_map[i] << std::endl;
-			}
-			write_nd_array<_real>( &output_map, "map.real" );
-		}
-	}
-	
-	else{
-		
-
-		// Upload map data to device
-		cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
-		// Gridder first map data
-		nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
-		// Setup SENSE opertor and compute CSM
-		csm_ = estimate_b1_map<float,2>( &image );
-		boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
-		E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-		E->set_csm(csm_);
-		//E->mult_csm_conj_sum( &image, &reg_image );	
-		// Output result
-		//boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
-		//boost::shared_ptr< hoNDArray<_complext> > host_image = reg_image.to_host();
-		//write_nd_array<_complext>( host_image.get(), "Blurred_Image.cplx");
-		
-		//boost::shared_ptr< hoNDArray<_real> > output_map_ptr = read_nd_array<_real>("map.real");
-		//hoNDArray<_real> output_map = *(output_map_ptr.get());
-		//Compute MFI Coeffs
-		//timer = new GPUTimer("Read in coeffs");
-
-	if( true ){
-		int fmax = 600;
-		int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
-		std::complex<float> om (0.0,2*M_PI);
-		std::cout << "L = " << L << std::endl;
-
-		if( MFI_C.get_number_of_elements() == 0 ){
-			//timer = new GPUTimer("Process time");
-			arma::cx_fmat demod( samples_per_interleave_ , L );
-			MFI_C = hoNDArray<_complext>( fmax*2+1 , L );
-			arma::cx_fvec b( samples_per_interleave_ );
-			arma::cx_fvec x( L );
-			//std::complex<float> I_f (0.0,1.0);
-		
-			int j = 0;
-			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
-				for(float i = 0; i < samples_per_interleave_; i++) {
-					demod(i,j) = exp(om*i*sample_time*f);
-					//std::cout << demod(i,j) << std::endl;
+			//If data is for single shot off-res map			
+			if(flag > 0){
+				//filter data to ignore high-freq image components
+				hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
+				for(int i =0; i < samples_per_interleave_; i++){
+					map_samples0_filt[i] *= exp(-.5*pow(i/200.,2.) );
 				}
-				j++;
-			}
-			j = 0;
-			for(float f = -fmax; f <= fmax; f++){
-				for(float i = 0; i < samples_per_interleave_; i++) {
-					b(i) = exp(om*i*sample_time*f);
+
+				// Upload map data to device
+				cuNDArray<_complext> samples(map_samples0_filt);
+
+				// Gridder first map data
+				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
+
+				// Setup Sense Operator
+				boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
+				if( flag == 1){ //compute and save first map image
+					csm_ = estimate_b1_map<float,2>( &image );
+					E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+					E->set_csm(csm_);
+					E->mult_csm_conj_sum( &image, &reg_image );
+					reg_image0 = reg_image;
 				}
-				x = arma::solve(demod, b);
-				memcpy(MFI_C.get_data_ptr()+j*L, x.memptr(), L*sizeof(std::complex<float>));		
-				j++;
-			}
-			//delete timer;
-		}
-		//write_nd_array<_complext>( &MFI_C, "coeffs.cplx" );
+				else if( flag == 2){ //compute 2nd using existing csm
+					cuNDArray<_complext> reg_image1(&image_dims);
+					E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+					E->set_csm(csm_);
+					E->mult_csm_conj_sum( &image, &reg_image1 );	
 
-/*
-		hoNDArray<_complext> MFI_C((fmax*2+1)*L);
-		streampos size;
-		string filename = "MFI_Coeff_L" + std::to_string(L) + ".cplx";
-		//std::cout << filename << std::endl;
-		ifstream mfifile (filename, ios::in|ios::binary|ios::ate);
-		size = mfifile.tellg()/sizeof(double);
-		double * memblock = new double [size];
-		mfifile.seekg( 0, ios::beg );
-		mfifile.read((char *)memblock, sizeof(double)*size);
-		mfifile.close();
-		for( int i = 0; i < size; i+=2){
-			MFI_C[i/2] = _complext(memblock[i],memblock[i+1]);
-		}
-		//delete timer;
-*/	
-		//Compute Base Images
-		//hoNDArray<_complext> output_image(&image_dims);
-		for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
-			output_image[i] = 0;
-		}
-		hoNDArray<_complext> temp_image(&image_dims);
-		hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
-		int j = 0;
-		//int indx = 0;
-		for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
-			samples_demod = host_data_buffer_[set*slices_+slice];
-			_complext omega = _complext(0,2*M_PI*f*sample_time);
-			int i;
-			//std::cout << f <<std::endl;	
-			//timer = new GPUTimer("Demodulation");
-			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, omega)
-			#endif
-			for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
-				samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
-			}
-			//delete timer;
-			samples = samples_demod;
-			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
-			E->mult_csm_conj_sum( &image, &reg_image );
-			temp_image = *(reg_image.to_host());
-			//int i;
-			//timer = new GPUTimer("MFI Combination");
-			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(i) shared(output_image, temp_image, image_dims, L, j, fmax)
-			#endif
-			for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
-				//indx = output_map[i]+fmax;
-				//output_image[i] += reinterpret_cast<std::complex<float>>(MFI_C[indx*L+j]*temp_image[i]);
-				output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*temp_image[i]);
-			}
-			//delete timer;
-			j++;
-		}
+					//Get map images from GPU
+					boost::shared_ptr< hoNDArray<_complext> > host_image0 = reg_image0.to_host();
+					boost::shared_ptr< hoNDArray<_complext> > host_image1 = reg_image1.to_host();
+
+					//Comput B0 Map on host
+					hoNDArray<_complext> temp0 = *host_image0;
+					hoNDArray<_complext> temp1 = *host_image1;
+					output_map = *(new hoNDArray<_real>(&image_dims));
+					//hoNDArray<_real> output_map(&image_dims);
+					for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+						output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
+						//std::cout << output_map[i] << std::endl;
+					}
+				}
+			} //END MAP SCOPE
+
+			//Compute deblurred image from map
+			else{
+
+				// Upload data to GPU
+				cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
+
+				// Reconstuct on-resonant image
+				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+
+				// Setup SENSE opertor and compute CSM
+				csm_ = estimate_b1_map<float,2>( &image );
+				boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
+				E->setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+				E->set_csm(csm_);
+
+				//Deblur using Multi-frequency Interpolation
+				int fmax = 600;
+				int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
+				std::complex<float> om (0.0,2*M_PI);
+				std::cout << "L = " << L << std::endl;
+
+				//Compute MFI coefficients if not they do not already exist
+				if( MFI_C.get_number_of_elements() == 0 ){
+
+					//Setup some arma matrices
+					arma::cx_fmat demod( samples_per_interleave_ , L );
+					MFI_C = hoNDArray<_complext>( fmax*2+1 , L );
+					arma::cx_fvec b( samples_per_interleave_ );
+					arma::cx_fvec x( L );
+					//Setup and solve least-squares probelm
+					int j = 0;
+					for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
+						for(float i = 0; i < samples_per_interleave_; i++) {
+							demod(i,j) = exp(om*i*sample_time*f);
+						}
+						j++;
+					}
+					j = 0;
+					for(float f = -fmax; f <= fmax; f++){
+						for(float i = 0; i < samples_per_interleave_; i++) {
+							b(i) = exp(om*i*sample_time*f);
+						}
+						x = arma::solve(demod, b);
+						memcpy(MFI_C.get_data_ptr()+j*L, x.memptr(), L*sizeof(std::complex<float>));		
+						j++;
+					}
+				}
+
+				//Initialize/Reset output image
+				for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
+					output_image[i] = 0;
+				}
+				hoNDArray<_complext> temp_image(&image_dims);
+				hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
+				int j = 0;
+
+				//Interate over numer of base images
+				for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
+
+					samples_demod = host_data_buffer_[set*slices_+slice];
+					_complext omega = _complext(0,2*M_PI*f*sample_time);
+					int i;
+
+					//demodulate data at base frequency f
+					#ifdef USE_OMP
+					#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, omega)
+					#endif
+					for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
+						samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
+					}
+
+					//Upload samples and compute base image
+					samples = samples_demod;
+					nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+					E->mult_csm_conj_sum( &image, &reg_image );
+					temp_image = *(reg_image.to_host());
 		
-		//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
-		reg_image = output_image;
-	}
+					//Update output image
+					#ifdef USE_OMP
+					#pragma omp parallel for default(none) private(i) shared(output_image, temp_image, image_dims, L, j, fmax)
+					#endif
+					for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
+						output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*temp_image[i]);
+					}
+					j++;
+				}
 
-		
-	
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	
+				//Package image into message and pass on to next gadget
+				GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
+				cm2->getObjectPtr()->create(output_image.get_dimensions());
+				memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
+				header->cont(cm2);
 
-    GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = 
-            new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
-	cm2->getObjectPtr()->create(output_image.get_dimensions());
-	memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
-	//hoNDArray<_complext> blur_image = *host_image;
-	//memcpy(cm2->getObjectPtr()->get_data_ptr(), blur_image.get_data_ptr(), blur_image.get_number_of_elements()*sizeof(std::complex<float>));
-	header->cont(cm2);
-	
-	if (this->next()->putq(header) < 0) {
-	  GDEBUG("Failed to put job on queue.\n");
-	  header->release();
-	  return GADGET_FAIL;
+				if (this->next()->putq(header) < 0) {
+				  GDEBUG("Failed to put job on queue.\n");
+				  header->release();
+				  return GADGET_FAIL;
+				}
+			}
+			interleaves_counter_multiframe_[set*slices_+slice] = 0;
+		}
+		interleaves_counter_singleframe_[set*slices_+slice] = 0;
 	}
-	}
-	interleaves_counter_multiframe_[set*slices_+slice] = 0;
-      }
-      interleaves_counter_singleframe_[set*slices_+slice] = 0;
-    }
     m1->release();
 	delete timer;
+	GDEBUG("Gadget ok.\n");
     return GADGET_OK;
+	
   }
-
-//  GadgetContainerMessage<ISMRMRD::AcquisitionHeader>*
-//  gpuSpiralDeblurGadget::duplicate_profile( GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *profile )
-//  {
-//    GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *copy = 
-//      new GadgetContainerMessage<ISMRMRD::AcquisitionHeader>();
-//    
-//    GadgetContainerMessage< hoNDArray< std::complex<float> > > *cont_copy = 
-//      new GadgetContainerMessage< hoNDArray< std::complex<float> > >();
-//    
-//    *copy->getObjectPtr() = *profile->getObjectPtr();
-//    *(cont_copy->getObjectPtr()) = *(AsContainerMessage<hoNDArray< std::complex<float> > >(profile->cont())->getObjectPtr());
-//    
-//    copy->cont(cont_copy);
-//    return copy;
-//  }
 
   GADGET_FACTORY_DECLARE(gpuSpiralDeblurGadget)
 }
