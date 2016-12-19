@@ -438,6 +438,11 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			return GADGET_FAIL;
 		}	
 
+		if( acceleration_factor_ != Nints/interleaves_counter_singleframe_[set*slices_+slice] ){
+			GDEBUG("Change of acceleration factor detected\n");
+			acceleration_factor_ =  Nints/interleaves_counter_singleframe_[set*slices_+slice];
+      }
+
 		// Prepare an image header for this frame
 		GadgetContainerMessage<ISMRMRD::ImageHeader> *header = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
 		ISMRMRD::AcquisitionHeader *base_head = m1->getObjectPtr();
@@ -627,7 +632,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					}
 					j++;
 				}
-
+				write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 				//Package image into message and pass on to next gadget
 				GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 				cm2->getObjectPtr()->create(output_image.get_dimensions());
@@ -646,7 +651,6 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	}
     m1->release();
 	delete timer;
-	GDEBUG("Gadget ok.\n");
     return GADGET_OK;
 	
   }
