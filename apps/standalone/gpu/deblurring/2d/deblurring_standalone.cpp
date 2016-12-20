@@ -66,6 +66,7 @@ int main( int argc, char** argv)
   }
 
   GPUTimer *timer;
+  GPUTimer *timer2;
 
   // Load samples from disk
 
@@ -309,6 +310,7 @@ int main( int argc, char** argv)
   for(float f = -fmax; f <= fmax; f += fmax*2./L){
     samples_demod = *(data_samples.get());
     std:cout << f <<std::endl;
+	timer2 = new GPUTimer("Demodulate");
     for( int ch = 0; ch < num_channels; ch++) {
       for( int k = 0; k < interleaves; k++) {
 	    for( int i = 0; i < samples_per_profile; i++) {
@@ -318,9 +320,12 @@ int main( int argc, char** argv)
 	    }
       }
     }
+	delete timer2;
     samples = samples_demod;
+	timer2 = new GPUTimer("NFFT Compute");
     plan.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
     E->mult_csm_conj_sum( &image, &base_image );
+	delete timer2;
 	temp_image = *(base_image.to_host());
     if( j == 4){  
       write_nd_array<_complext>( &temp_image, "base_im" );
