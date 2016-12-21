@@ -540,7 +540,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					output_map = *(new hoNDArray<_real>(&image_dims));
 					//hoNDArray<_real> output_map(&image_dims);
 					for (int i = 0; i < image_dims[0]*image_dims[1]; i++) {
-						output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));
+						output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 						//std::cout << output_map[i] << std::endl;
 					}
 				}
@@ -632,7 +632,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					}
 					j++;
 				}
-				write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
+				//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 				//Package image into message and pass on to next gadget
 				GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 				cm2->getObjectPtr()->create(output_image.get_dimensions());
