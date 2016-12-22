@@ -23,7 +23,9 @@
 #include "vds.h"
 #include "b1_map.h"
 #include "cuNonCartesianSenseOperator.h"
-
+#ifdef USE_OMP
+    #include <omp.h>
+#endif
 
 #include <iostream>
 
@@ -295,7 +297,7 @@ int main( int argc, char** argv)
   }
 
   //Compute Base Images
-  timer = new GPUTimer("Computing demodulated base images");
+  timer = new GPUTimer("MFI Loop");
   hoNDArray<_complext> output_image(&image_dims);
   for (int i = 0; i < matrix_size[0]*matrix_size[1]; i++) {
     output_image[i] = 0;
@@ -308,41 +310,42 @@ int main( int argc, char** argv)
   int j = 0;
   int indx = 0;
   for(float f = -fmax; f <= fmax; f += fmax*2./L){
+	timer2 = new GPUTimer("get samples and demodulate");
     samples_demod = *(data_samples.get());
     std:cout << f <<std::endl;
-	timer2 = new GPUTimer("Demodulate");
-    for( int ch = 0; ch < num_channels; ch++) {
-      for( int k = 0; k < interleaves; k++) {
-	    for( int i = 0; i < samples_per_profile; i++) {
-	      //demod[k*samples_per_profile+i] = exp(I*2*M_PI*f*i*sample_time);
-          samples_demod[(k*samples_per_profile*interleaves)+(ch*samples_per_profile)+i] *= exp(I*2*M_PI*f*i*sample_time);
-	      //std:cout << samples_demod[(ch*samples_per_profile*interleaves)+(k*samples_per_profile)+i] <<std::endl;
-	    }
-      }
-    }
+	_complext omega = _complext(0,2*M_PI*f*sample_time);
+	int i;
+	int NS = samples_per_profile*interleaves*num_channels;
+	//timer2 = new GPUTimer("Demodulate");
+	#ifdef USE_OMP
+	#pragma omp parallel for default(none) private(i) shared(NS, samples_demod, omega, samples_per_profile)
+	#endif
+    for(i = 0; i < NS; i++) {
+		samples_demod[i] *= exp(omega*(i%samples_per_profile));
+	}
 	delete timer2;
+	timer2 = new GPUTimer("Upload, NFFT Compute, recall");
     samples = samples_demod;
-	timer2 = new GPUTimer("NFFT Compute");
     plan.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
     E->mult_csm_conj_sum( &image, &base_image );
-	delete timer2;
 	temp_image = *(base_image.to_host());
-    if( j == 4){  
+	delete timer2;
+/*    if( j == 4){  
       write_nd_array<_complext>( &temp_image, "base_im" );
+    }*/
+	timer2 = new GPUTimer("MFI");
+	#ifdef USE_OMP
+	#pragma omp parallel for default(none) private(i) shared(output_image, output_map, temp_image, matrix_size, L, j, fmax, MFI_C)
+	#endif
+    for (i = 0; i < matrix_size[0]*matrix_size[1]; i++) {
+      output_image[i] += MFI_C[output_map[i]+fmax*L+j]*temp_image[i];
     }
-    for (int i = 0; i < matrix_size[0]*matrix_size[1]; i++) {
-      indx = output_map[i]+fmax;
-      output_image[i] += MFI_C[indx*L+j]*temp_image[i];
-      //std::cout << i << std::endl;
-      if( abs(output_image[i]) > float(1)){
-        std::cout << abs(output_image[i]) << " at frequency  " << indx << " position " << i << std::endl;
-      } 
-    }
+	delete timer2;
     j++;
   }
   delete timer;
-  write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
-  output_image.clear();
+  //write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
+  //output_image.clear();
 
 
 
