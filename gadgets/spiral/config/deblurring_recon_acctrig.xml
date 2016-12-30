@@ -19,7 +19,7 @@
 		<name>CoilReduction</name>
 		<dll>gadgetron_mricore</dll>
 		<classname>CoilReductionGadget</classname>
-		<property><name>coils_out</name><value>32</value></property>
+		<property><name>coils_out</name><value>16</value></property>
 	</gadget>
 
     <!-- Noise prewhitening -->
