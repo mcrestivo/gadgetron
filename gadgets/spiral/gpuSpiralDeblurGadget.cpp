@@ -247,7 +247,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
     //
 
 	GPUTimer *timer;
-	//timer = new GPUTimer("Process time");
+	timer = new GPUTimer("Process time");
 	int flag = m1->getObjectPtr()->user_int[0];
 	if(flag > 0){
 		Nints = 1;
@@ -682,15 +682,15 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			}
 			//delete timer;
 			samples = samples_demod;
-			timer = new GPUTimer("nfft compute");
+			//timer = new GPUTimer("nfft compute");
 			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
-			delete timer;
-			timer = new GPUTimer("csm_conj_sum");
+			//delete timer;
+			//timer = new GPUTimer("csm_conj_sum");
 			E->mult_csm_conj_sum( &image, &reg_image );
-			delete timer;
-			timer = new GPUTimer("to host");
+			//delete timer;
+			//timer = new GPUTimer("to host");
 			temp_image = *(reg_image.to_host());
-			delete timer;
+			//delete timer;
 			//int i;
 			//timer = new GPUTimer("MFI Combination");
 			#ifdef USE_OMP
@@ -732,7 +732,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
       interleaves_counter_singleframe_[set*slices_+slice] = 0;
     }
     m1->release();
-	//delete timer;
+	delete timer;
     return GADGET_OK;
   }
 
