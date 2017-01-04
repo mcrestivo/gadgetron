@@ -118,7 +118,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
     {
 
 		IsmrmrdReconData* recon_bit_ = m1->getObjectPtr();
-
+		
+		
 		// Allocate various counters if they are NULL
 		if( !image_counter_.get() ){
 			image_counter_ = boost::shared_array<long>(new long[1]);
@@ -139,8 +140,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		//host_data = recon_bit_->rbit_[0].data_.data_;
 					//write_nd_array<float>( host_traj, "hotraj.real" );
 		memcpy(host_data.get_data_ptr(), recon_bit_->rbit_[0].data_.data_.get_data_ptr(), recon_bit_->rbit_[0].data_.data_.get_number_of_elements()*sizeof(complext<float>));
+		write_nd_array<complext<float>>( &host_data, "hostdata.cplx");
 
-
+		/*
 		ISMRMRD::AcquisitionHeader& curr_header = recon_bit_->rbit_[0].data_.headers_(0, 0, 0);
 		//std::cout << curr_header.user_int[0] << std::endl;
 
@@ -246,7 +248,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			}
 
 		}
-
+		*/
 		m1->release();
 		return GADGET_OK;
 	}
