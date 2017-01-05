@@ -1,4 +1,4 @@
-#include "gpuSpiralDeblurGadget.h"
+#include "gpuSpiralDeblurGadgetv2.h"
 #include "GenericReconJob.h"
 #include "cuNDArray_utils.h"
 #include "cuNDArray_reductions.h"
@@ -39,7 +39,7 @@ typedef complext<_real> _complext;
 typedef reald<_real,2>::Type _reald2;
 typedef cuNFFT_plan<_real,2> plan_type;
 
-  gpuSpiralDeblurGadget::gpuSpiralDeblurGadget()
+  gpuSpiralDeblurGadgetv2::gpuSpiralDeblurGadgetv2()
     : samples_to_skip_start_(0)
     , samples_to_skip_end_(0)
     , samples_per_interleave_(0)
@@ -49,9 +49,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
   {
   }
 
-  gpuSpiralDeblurGadget::~gpuSpiralDeblurGadget() {}
+  gpuSpiralDeblurGadgetv2::~gpuSpiralDeblurGadgetv2() {}
 
-  int gpuSpiralDeblurGadget::process_config(ACE_Message_Block* mb)
+  int gpuSpiralDeblurGadgetv2::process_config(ACE_Message_Block* mb)
   {
 
     int number_of_devices = 0;
@@ -238,7 +238,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
     return GADGET_OK;
   }
 
-  int gpuSpiralDeblurGadget::
+  int gpuSpiralDeblurGadgetv2::
   process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader> *m1,
 	  GadgetContainerMessage< hoNDArray< std::complex<float> > > *m2,
 	  GadgetContainerMessage< hoNDArray<float> > *m3)
@@ -247,7 +247,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
     
 	//Initialize timer for testing purposes (commented out)
 	GPUTimer *timer;
-	timer = new GPUTimer("Process time");
+	//timer = new GPUTimer("Process time");
 
 	//Check user_int[0], 1 & 2 = map acquisition, 0 = image data
 	int flag = m1->getObjectPtr()->user_int[0];
@@ -376,10 +376,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 			cuNDArray<floatd2> traj(*host_traj_);
 			dcw_buffer_ = boost::shared_ptr< cuNDArray<float> >( new cuNDArray<float>(*host_weights_) );
-
-			nfft_plan_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
-			nfft_plan_.preprocess(&traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
-
+			int Nplans = 1;
+			nfft_plan_ = boost::shared_array< cuNFFT_plan<float,2> > (new cuNFFT_plan<float,2>[Nplans]);
+			for(int i = 0; i<Nplans; i++){
+				nfft_plan_[i].setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
+				nfft_plan_[i].preprocess(&traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
+			}
 			prepared_ = true;
 		}
     }
@@ -501,10 +503,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			cuNDArray<_complext> samples(map_samples0_filt);
 
 			// Gridder first map data
-			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
+			nfft_plan_[0].compute( &samples, &image, dcw_buffer_.get(), cuNFFT_plan<float,2>::NFFT_BACKWARDS_NC2C );
 
 			// Setup Sense Operator
-			boost::shared_ptr< cuNonCartesianSenseOperator<_real,2,false> > E ( new cuNonCartesianSenseOperator<_real,2,false>() );
 			if( flag == 1){ //compute and save first map image
 				csm_ = estimate_b1_map<float,2>( &image );
 				deref_csm = *csm_;	
@@ -538,7 +539,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
 
 			// Reconstuct on-resonant image
-			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
+			nfft_plan_[0].compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
 
 			// Setup SENSE opertor and compute CSM
 			csm_ = estimate_b1_map<float,2>( &image );
@@ -578,42 +579,89 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			}
 
 			//Initialize/Reset output image
-			output_image.fill(0.0f);
+			output_image.fill(_complext(0,0));
 			
-			hoNDArray<_complext> temp_image(&image_dims);
-			hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
-			int j = 0;
+			boost::shared_array< hoNDArray<_complext> > ho_image(new hoNDArray<_complext>[L]);
+			boost::shared_array< cuNDArray<_complext> > gpu_image(new cuNDArray<_complext>[L]);
+			boost::shared_array< hoNDArray<_complext> > samples_demod( new hoNDArray<_complext>[L] );
+			boost::shared_array< cuNDArray<_complext> > samples_demod_gpu( new cuNDArray<_complext>[L] );
+			boost::shared_array< cuNDArray<_complext> > temp_gpu_image(new cuNDArray<_complext>[L]);
+			for(int j = 0; j < L; j++){
+				ho_image[j].create(&image_dims);
+				ho_image[j].fill(_complext(0,0));
+				samples_demod[j].create(host_data_buffer_[0].get_dimensions());
+				samples_demod[j].fill(_complext(0,0));
+				gpu_image[j].create(&image_dims);
+				image_dims.push_back(num_coils);
+				temp_gpu_image[j].create(&image_dims);
+				image_dims.pop_back();
+			}
+			int j;
+			float f;
+			int i;
+			int D = int(samples_per_interleave_*Nints*num_coils);
+			_complext omega;
+
+			if( exp_array.get_number_of_elements() == 0 ) {
+				exp_array = hoNDArray<_complext>( D*L );
+				#ifdef USE_OMP
+				#pragma omp parallel for default(none) private(j,f,i,omega) shared(L, D, num_coils, samples_demod, samples_demod_gpu, sample_time, fmax)
+				#endif
+				for(j = 0; j<L; j++){
+					f = -fmax+fmax*2./(L-1)*j;
+					omega = _complext(0,2*M_PI*f*sample_time);
+					for(i = 0; i < D; i++) {
+						exp_array[j*D+i] = exp(omega*(i%samples_per_interleave_));
+					}
+				}
+			}
 
 			//Interate over numer of base images
-			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
-
-				samples_demod = host_data_buffer_[set*slices_+slice];
-				_complext omega = _complext(0,2*M_PI*f*sample_time);
-				int i;
-
+			timer = new GPUTimer("OMP Demodulation");
+			#ifdef USE_OMP
+			#pragma omp parallel for default(none) private(j,i) shared(L, D,num_coils, samples_demod, samples_demod_gpu, sample_time, fmax)
+			#endif
+			for(j = 0; j<L; j++){
+				//int i;
 				//demodulate data at base frequency f
-				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, omega)
-				#endif
-				for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
-					samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
+				//#ifdef USE_OMP
+				//#pragma omp parallel for default(none) private(i) shared(j, num_coils, samples_demod, f, sample_time, omega)
+				//#endif
+				samples_demod[j] = host_data_buffer_[0];
+				for(i = 0; i < D; i++) {
+					samples_demod[j][i] *= exp_array[j*D+i];
 				}
-
-				//Upload samples and compute base image
-				samples = samples_demod;
-				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );	
-				csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
-				temp_image = *(reg_image.to_host());
-	
+				samples_demod_gpu[j] = samples_demod[j];
+			}
+			delete timer;
+			timer = new GPUTimer("OMP nfft compute");
+			//Upload samples and compute base image
+			#ifdef USE_OMP
+			#pragma omp parallel for default(none) private(j) shared(L, samples_demod_gpu, ho_image, temp_gpu_image, gpu_image)
+			#endif
+			for(j = 0; j<L; j++){
+				//samples_demod_gpu[j] = samples_demod[j];
+				nfft_plan_[0].compute( &samples_demod_gpu[j], &temp_gpu_image[j], dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );	
+				csm_mult_MH<float,2>(&temp_gpu_image[j], &gpu_image[j], &deref_csm);
+				//ho_image[j] = *(gpu_image[j].to_host());
+			}
+			//Update output image
+			//#ifdef USE_OMP
+			//#pragma omp parallel for default(none) private(j,i) shared(output_image, ho_image, image_dims, L, fmax)
+			//#endif
+			delete timer;
+			timer = new GPUTimer("Inner-OMP MFI combination");
+			for(j = 0; j<L; j++){
 				//Update output image
+				ho_image[j] = *(gpu_image[j].to_host());
 				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(output_image, temp_image, image_dims, L, j, fmax)
+				#pragma omp parallel for default(none) private(i) shared(output_image, ho_image, image_dims, L, j, fmax)
 				#endif
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
-					output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*temp_image[i]);
+					output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*ho_image[j][i]);
 				}
-				j++;
 			}
+			delete timer;
 			//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 			//Package image into message and pass on to next gadget
 			GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
@@ -629,10 +677,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		}
 	}
     m1->release();
-	delete timer;
+	//delete timer;
     return GADGET_OK;
 	
   }
 
-  GADGET_FACTORY_DECLARE(gpuSpiralDeblurGadget)
+  GADGET_FACTORY_DECLARE(gpuSpiralDeblurGadgetv2)
 }

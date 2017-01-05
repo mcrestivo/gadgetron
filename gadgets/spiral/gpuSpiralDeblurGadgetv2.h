@@ -1,5 +1,5 @@
-#ifndef gpuSpiralDeblurGadget_H
-#define gpuSpiralDeblurGadget_H
+#ifndef gpuSpiralDeblurGadgetv2_H
+#define gpuSpiralDeblurGadgetv2_H
 #pragma once
 
 #include "gadgetron_spiral_export.h"
@@ -20,15 +20,15 @@
 
 namespace Gadgetron{
 
-  class EXPORTGADGETS_SPIRAL gpuSpiralDeblurGadget :
+  class EXPORTGADGETS_SPIRAL gpuSpiralDeblurGadgetv2 :
     public Gadget3< ISMRMRD::AcquisitionHeader, hoNDArray< std::complex<float> >, hoNDArray<float> >
   {
 
   public:
-    GADGET_DECLARE(gpuSpiralDeblurGadget);
+    GADGET_DECLARE(gpuSpiralDeblurGadgetv2);
 
-    gpuSpiralDeblurGadget();
-    virtual ~gpuSpiralDeblurGadget();
+    gpuSpiralDeblurGadgetv2();
+    virtual ~gpuSpiralDeblurGadgetv2();
 
   protected:
     GADGET_PROPERTY(deviceno, int, "GPU device number", 0);
@@ -90,11 +90,13 @@ namespace Gadgetron{
     boost::shared_array< hoNDArray<float_complext> > host_data_buffer_;
     boost::shared_ptr< cuNDArray<float> > dcw_buffer_;
 
+	boost::shared_array< cuNFFT_plan<float,2> > nfft_plan_;
+
     std::vector<size_t> fov_vec_;
     std::vector<size_t> image_dimensions_recon_;
     uint64d2 image_dimensions_recon_os_;
 
-    cuNFFT_plan<float,2> nfft_plan_;
+    //cuNFFT_plan<float,2> nfft_plan_;
     //cuCgSolver<float_complext> cg_;
     boost::shared_ptr< cuNDArray<float_complext> > csm_;
 	cuNDArray<complext<float>> deref_csm; 
@@ -104,6 +106,7 @@ namespace Gadgetron{
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > image_headers_queue_;
 
 	hoNDArray<float_complext> MFI_C;
+	hoNDArray<float_complext> exp_array;
   };
 }
-#endif //gpuSpiralDeblurGadget_H
+#endif //gpuSpiralDeblurGadgetv2_H

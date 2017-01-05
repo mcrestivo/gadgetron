@@ -25,7 +25,8 @@ add_library(gadgetron_spiral SHARED
   SpiralToGenericGadget.h SpiralToGenericGadget.cpp
   gpuSpiralDeblurGadget.h gpuSpiralDeblurGadget.cpp
   gpuSpiralAutoDeblurGadget.h gpuSpiralAutoDeblurGadget.cpp
-  gpuSpiralDeblurGadgetClean.h gpuSpiralDeblurGadgetClean.cpp)
+  gpuSpiralDeblurGadgetClean.h gpuSpiralDeblurGadgetClean.cpp
+  gpuSpiralDeblurGadgetv2.h gpuSpiralDeblurGadgetv2.cpp)
 
 set_target_properties(gadgetron_spiral PROPERTIES VERSION ${GADGETRON_VERSION_STRING} SOVERSION ${GADGETRON_SOVERSION})
 
@@ -43,6 +44,7 @@ install (TARGETS gadgetron_spiral DESTINATION lib COMPONENT main)
 install (FILES vds.h gadgetron_spiral_export.h 
 					 gpuSpiralDeblurGadget.h
 					 gpuSpiralDeblurGadgetClean.h
+					 gpuSpiralDeblurGadgetv2.h
 					 gpuSpiralAutoDeblurGadget.h
                      gpuSpiralSensePrepGadget.h 
                      SpiralToGenericGadget.h 

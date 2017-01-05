@@ -5,7 +5,7 @@ if (ARMADILLO_FOUND)
     spiral_flow_generic_gpusense_cg.xml 
     spiral_flow_generic_gpusense_sb.xml 
     spiral_interactive.xml
-    deblurring_recon.xml 
+    #deblurring_recon.xml 
 	#deblurring_recon_acctrig.xml 
     DESTINATION ${GADGETRON_INSTALL_CONFIG_PATH} COMPONENT main)
 elseif (ARMADILLO_FOUND)
