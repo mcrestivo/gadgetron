@@ -142,10 +142,11 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		memcpy(host_data.get_data_ptr(), recon_bit_->rbit_[0].data_.data_.get_data_ptr(), recon_bit_->rbit_[0].data_.data_.get_number_of_elements()*sizeof(complext<float>));
 		write_nd_array<complext<float>>( &host_data, "hostdata.cplx");
 
-		/*
+		
 		ISMRMRD::AcquisitionHeader& curr_header = recon_bit_->rbit_[0].data_.headers_(0, 0, 0);
-		//std::cout << curr_header.user_int[0] << std::endl;
-
+		std::cout << curr_header.user_int[0] << std::endl;
+		std::cout << curr_header.scan_counter << std::endl;
+/*
 		if(curr_header.user_int[0] == 0){
 			if(!prepared_){
 				//Setup image arrays
