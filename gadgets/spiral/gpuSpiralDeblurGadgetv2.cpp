@@ -579,35 +579,35 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			}
 
 			//Initialize/Reset output image
-			output_image.fill(_complext(0,0));
-			
-			boost::shared_array< hoNDArray<_complext> > ho_image(new hoNDArray<_complext>[L]);
-			boost::shared_array< cuNDArray<_complext> > gpu_image(new cuNDArray<_complext>[L]);
-			boost::shared_array< hoNDArray<_complext> > samples_demod( new hoNDArray<_complext>[L] );
-			boost::shared_array< cuNDArray<_complext> > samples_demod_gpu( new cuNDArray<_complext>[L] );
-			boost::shared_array< cuNDArray<_complext> > temp_gpu_image(new cuNDArray<_complext>[L]);
-			for(int j = 0; j < L; j++){
-				ho_image[j].create(&image_dims);
-				ho_image[j].fill(_complext(0,0));
-				samples_demod[j].create(host_data_buffer_[0].get_dimensions());
-				samples_demod[j].fill(_complext(0,0));
-				gpu_image[j].create(&image_dims);
-				image_dims.push_back(num_coils);
-				temp_gpu_image[j].create(&image_dims);
-				image_dims.pop_back();
-			}
 			int j;
 			float f;
 			int i;
 			int D = int(samples_per_interleave_*Nints*num_coils);
 			_complext omega;
-
-			if( exp_array.get_number_of_elements() == 0 ) {
+			omp_set_dynamic(1);
+			output_image.fill(_complext(0,0));
+			if(exp_array.get_number_of_elements() == 0){
+				ho_image = boost::shared_array< hoNDArray<_complext> >(new hoNDArray<_complext>[L]);
+				gpu_image = boost::shared_array< cuNDArray<_complext> >(new cuNDArray<_complext>[L]);
+				samples_demod = boost::shared_array< hoNDArray<_complext> >( new hoNDArray<_complext>[L]);
+				samples_demod_gpu = boost::shared_array< cuNDArray<_complext> >( new cuNDArray<_complext>[L]);
+				temp_gpu_image = boost::shared_array< cuNDArray<_complext> >(new cuNDArray<_complext>[L]);
+				for(int j = 0; j < L; j++){
+					ho_image[j].create(&image_dims);
+					ho_image[j].fill(_complext(0,0));
+					samples_demod[j].create(host_data_buffer_[0].get_dimensions());
+					samples_demod[j].fill(_complext(0,0));
+					gpu_image[j].create(&image_dims);
+					image_dims.push_back(num_coils);
+					temp_gpu_image[j].create(&image_dims);
+					image_dims.pop_back();
+				}
 				exp_array = hoNDArray<_complext>( D*L );
 				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(j,f,i,omega) shared(L, D, num_coils, samples_demod, samples_demod_gpu, sample_time, fmax)
+				#pragma omp parallel for default(shared) private(j,f,i,omega) num_threads(8) 
 				#endif
 				for(j = 0; j<L; j++){
+					printf("Thread number = %d\n", omp_get_thread_num());
 					f = -fmax+fmax*2./(L-1)*j;
 					omega = _complext(0,2*M_PI*f*sample_time);
 					for(i = 0; i < D; i++) {
@@ -615,48 +615,19 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					}
 				}
 			}
-
 			//Interate over numer of base images
-			timer = new GPUTimer("OMP Demodulation");
+			timer = new GPUTimer("OMP All");
 			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(j,i) shared(L, D,num_coils, samples_demod, samples_demod_gpu, sample_time, fmax)
+			#pragma omp parallel for default(shared) private(j,i) num_threads(20)
 			#endif
 			for(j = 0; j<L; j++){
-				//int i;
-				//demodulate data at base frequency f
-				//#ifdef USE_OMP
-				//#pragma omp parallel for default(none) private(i) shared(j, num_coils, samples_demod, f, sample_time, omega)
-				//#endif
 				samples_demod[j] = host_data_buffer_[0];
 				for(i = 0; i < D; i++) {
 					samples_demod[j][i] *= exp_array[j*D+i];
 				}
 				samples_demod_gpu[j] = samples_demod[j];
-			}
-			delete timer;
-			timer = new GPUTimer("OMP nfft compute");
-			//Upload samples and compute base image
-			#ifdef USE_OMP
-			#pragma omp parallel for default(none) private(j) shared(L, samples_demod_gpu, ho_image, temp_gpu_image, gpu_image)
-			#endif
-			for(j = 0; j<L; j++){
-				//samples_demod_gpu[j] = samples_demod[j];
 				nfft_plan_[0].compute( &samples_demod_gpu[j], &temp_gpu_image[j], dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );	
 				csm_mult_MH<float,2>(&temp_gpu_image[j], &gpu_image[j], &deref_csm);
-				//ho_image[j] = *(gpu_image[j].to_host());
-			}
-			//Update output image
-			//#ifdef USE_OMP
-			//#pragma omp parallel for default(none) private(j,i) shared(output_image, ho_image, image_dims, L, fmax)
-			//#endif
-			delete timer;
-			timer = new GPUTimer("Inner-OMP MFI combination");
-			for(j = 0; j<L; j++){
-				//Update output image
-				ho_image[j] = *(gpu_image[j].to_host());
-				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(output_image, ho_image, image_dims, L, j, fmax)
-				#endif
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
 					output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*ho_image[j][i]);
 				}

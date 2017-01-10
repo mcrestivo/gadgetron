@@ -105,6 +105,12 @@ namespace Gadgetron{
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > buffer_;
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > image_headers_queue_;
 
+	boost::shared_array< hoNDArray<float_complext> > ho_image;
+	boost::shared_array< cuNDArray<float_complext> > gpu_image;
+	boost::shared_array< hoNDArray<float_complext> > samples_demod;
+	boost::shared_array< cuNDArray<float_complext> > samples_demod_gpu;
+	boost::shared_array< cuNDArray<float_complext> > temp_gpu_image;
+
 	hoNDArray<float_complext> MFI_C;
 	hoNDArray<float_complext> exp_array;
   };

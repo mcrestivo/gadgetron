@@ -546,7 +546,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 			//Deblur using Multi-frequency Interpolation
 			int fmax = 600;
-			int L = std::ceil(3*fmax*samples_per_interleave_*sample_time);
+			int L = std::ceil(2.5*fmax*samples_per_interleave_*sample_time);
 			std::complex<float> om (0.0,2*M_PI);
 			std::cout << "L = " << L << std::endl;
 
@@ -582,21 +582,38 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			
 			hoNDArray<_complext> temp_image(&image_dims);
 			hoNDArray<_complext> samples_demod( new hoNDArray<_complext> );
-			int j = 0;
+			int j;
+			float f;
+			int i;
+			int D = int(samples_per_interleave_*Nints*num_coils);
+			_complext omega;
+			omp_set_dynamic(1);
+			int N = 8;
+
+			if( exp_array.get_number_of_elements() == 0 ) {
+				exp_array = hoNDArray<_complext>( D*L );
+				#ifdef USE_OMP
+				#pragma omp parallel for default(shared) private(j,f,i,omega) num_threads(N) 
+				#endif
+				for(j = 0; j<L; j++){
+					//printf("Thread number = %d\n", omp_get_thread_num());
+					f = -fmax+fmax*2./(L-1)*j;
+					omega = _complext(0,2*M_PI*f*sample_time);
+					for(i = 0; i < D; i++) {
+						exp_array[j*D+i] = exp(omega*(i%samples_per_interleave_));
+					}
+				}
+			}
 
 			//Interate over numer of base images
-			for(float f = -fmax; f <= fmax; f += fmax*2./(L-1)){
+			for(j = 0; j<L; j++){
 
-				samples_demod = host_data_buffer_[set*slices_+slice];
-				_complext omega = _complext(0,2*M_PI*f*sample_time);
-				int i;
-
-				//demodulate data at base frequency f
+				samples_demod = host_data_buffer_[0];
 				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(num_coils, samples_demod, f, sample_time, omega)
+				#pragma omp parallel for default(none) private(i) shared(j,D,samples_demod) num_threads(N)
 				#endif
-				for(i = 0; i < samples_per_interleave_*Nints*num_coils; i++) {
-					samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
+				for(i = 0; i < D; i++) {
+					samples_demod[i] *= exp_array[j*D+i];
 				}
 
 				//Upload samples and compute base image
@@ -604,15 +621,16 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );	
 				csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 				temp_image = *(reg_image.to_host());
-	
+
 				//Update output image
-				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(output_image, temp_image, image_dims, L, j, fmax)
-				#endif
+				int mfc_index;
+				//#ifdef USE_OMP
+				//#pragma omp parallel for default(none) private(i,mfc_index) shared(temp_image,j,image_dims,fmax,L,output_image) num_threads(N)
+				//#endif
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
-					output_image[i] += (MFI_C[int(output_map[i]+fmax)*L+j]*temp_image[i]);
+					mfc_index = int(output_map[i]+fmax)*L+j;
+					output_image[i] += (MFI_C[mfc_index]*temp_image[i]);
 				}
-				j++;
 			}
 			//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 			//Package image into message and pass on to next gadget
