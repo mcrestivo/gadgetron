@@ -14,6 +14,7 @@
 #include "vds.h"
 #include "ismrmrd/xml.h"
 #include "GPUTimer.h"
+#include "hoNDFFT.h"
 
 #include <algorithm>
 #include <vector>
@@ -485,6 +486,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		// Setup output image array
 		image_dims.pop_back();
 		cuNDArray<_complext> reg_image(&image_dims);
+		//cuNDArray<_complext> reg_image2(&image_dims);
 		hoNDArray<_complext> output_image(&image_dims);
 
 		float sample_time = (1.0*Tsamp_ns_) * 1e-9;
@@ -543,10 +545,20 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			// Setup SENSE opertor and compute CSM
 			csm_ = estimate_b1_map<float,2>( &image );
 			deref_csm = *csm_;
+			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
+			hoNDArray<std::complex<float>> stdimage0(&image_dims);
+			hoNDArray<std::complex<float>> stdimage1(&image_dims);
+			hoNDArray<_complext> image0(&image_dims);
+			hoNDArray<_complext> image1(&image_dims);
+			image0 = *(reg_image.to_host());
+			memcpy(stdimage0.get_data_ptr(), image0.get_data_ptr(), image0.get_number_of_elements()*sizeof(std::complex<float>));
+			Gadgetron::hoNDFFT<float>::instance()->fft(&stdimage0);
+			Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage0);
 
 			//Deblur using Multi-frequency Interpolation
 			int fmax = 600;
 			int L = std::ceil(2.5*fmax*samples_per_interleave_*sample_time);
+			if(L%2 == 0){ L++; }
 			std::complex<float> om (0.0,2*M_PI);
 			std::cout << "L = " << L << std::endl;
 
@@ -588,50 +600,69 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			int D = int(samples_per_interleave_*Nints*num_coils);
 			_complext omega;
 			omp_set_dynamic(1);
-			int N = 8;
+			int N = 4;
 
-			if( exp_array.get_number_of_elements() == 0 ) {
-				exp_array = hoNDArray<_complext>( D*L );
-				#ifdef USE_OMP
-				#pragma omp parallel for default(shared) private(j,f,i,omega) num_threads(N) 
-				#endif
-				for(j = 0; j<L; j++){
-					//printf("Thread number = %d\n", omp_get_thread_num());
-					f = -fmax+fmax*2./(L-1)*j;
-					omega = _complext(0,2*M_PI*f*sample_time);
-					for(i = 0; i < D; i++) {
-						exp_array[j*D+i] = exp(omega*(i%samples_per_interleave_));
-					}
-				}
-			}
-
-			//Interate over numer of base images
-			for(j = 0; j<L; j++){
-
+			if( phase_mask.get_number_of_elements() == 0 ) {
+				phase_mask = hoNDArray<std::complex<float>>(&image_dims);
+				//printf("Thread number = %d\n", omp_get_thread_num());
+				f = fmax*2./(L-1);
+				std::cout << f << std::endl;
+				omega = _complext(0,2*M_PI*f*sample_time);
 				samples_demod = host_data_buffer_[0];
 				#ifdef USE_OMP
-				#pragma omp parallel for default(none) private(i) shared(j,D,samples_demod) num_threads(N)
+				#pragma omp parallel for num_threads(N) 
 				#endif
 				for(i = 0; i < D; i++) {
-					samples_demod[i] *= exp_array[j*D+i];
+					samples_demod[i] *= exp(omega*(i%samples_per_interleave_));
 				}
-
-				//Upload samples and compute base image
 				samples = samples_demod;
 				nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );	
 				csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
-				temp_image = *(reg_image.to_host());
+				image1 = *(reg_image.to_host());
+				memcpy(stdimage1.get_data_ptr(), image1.get_data_ptr(), image1.get_number_of_elements()*sizeof(std::complex<float>));
+				Gadgetron::hoNDFFT<float>::instance()->fft(&stdimage1);
+				Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage1);
+				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
+					phase_mask[i] = stdimage1[i]/stdimage0[i];
+				}
+			}
+			write_nd_array<std::complex<float>>( &phase_mask, "phase_mask.cplx" );
 
+			//start with -fmax image
+			//memcpy(temp_image.get_data_ptr(), stdimage0.get_data_ptr(), stdimage0.get_number_of_elements()*sizeof(std::complex<float>));
+			#ifdef USE_OMP
+			#pragma omp parallel for private (j,i) num_threads(N)
+			#endif
+			for (j = 0; j < (L-1)/2; j++){
+				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
+					stdimage0[i] *= std::exp(std::complex<float>(0,-1)*std::arg(phase_mask[i]));
+				}
+			}
+			
+			for(j = 0; j<L; j++){
 				//Update output image
 				int mfc_index;
-				//#ifdef USE_OMP
-				//#pragma omp parallel for default(none) private(i,mfc_index) shared(temp_image,j,image_dims,fmax,L,output_image) num_threads(N)
-				//#endif
+				if(j != 0){
+					#ifdef USE_OMP
+					#pragma omp parallel for num_threads(N)
+					#endif
+					for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
+						stdimage0[i] *= std::exp(std::complex<float>(0,1)*std::arg(phase_mask[i]));
+					}
+				}
+				stdimage1 = stdimage0;
+				Gadgetron::hoNDFFT<float>::instance()->ifftshift2D(stdimage1);
+				Gadgetron::hoNDFFT<float>::instance()->ifft(&stdimage1);
+				memcpy(temp_image.get_data_ptr(), stdimage1.get_data_ptr(), stdimage1.get_number_of_elements()*sizeof(std::complex<float>));
+				#ifdef USE_OMP
+				#pragma omp parallel for private(i,mfc_index) num_threads(N)
+				#endif
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
 					mfc_index = int(output_map[i]+fmax)*L+j;
 					output_image[i] += (MFI_C[mfc_index]*temp_image[i]);
 				}
 			}
+
 			//write_nd_array<_complext>( &output_image, "deblurred_im.cplx" );
 			//Package image into message and pass on to next gadget
 			GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();

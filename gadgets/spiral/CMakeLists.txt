@@ -6,6 +6,7 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/gadgets/mri_core
   ${CMAKE_SOURCE_DIR}/gadgets/pmri
   ${CMAKE_SOURCE_DIR}/toolboxes/nfft/gpu
+  ${CMAKE_SOURCE_DIR}/toolboxes/fft/cpu
   ${CMAKE_SOURCE_DIR}/toolboxes/core/cpu
   ${CMAKE_SOURCE_DIR}/toolboxes/core/gpu
   ${CMAKE_SOURCE_DIR}/toolboxes/mri/pmri/gpu
@@ -33,7 +34,7 @@ set_target_properties(gadgetron_spiral PROPERTIES VERSION ${GADGETRON_VERSION_ST
 target_link_libraries(gadgetron_spiral
   gadgetron_gadgetbase
   gadgetron_toolbox_log
-  gadgetron_toolbox_cpucore gadgetron_toolbox_gpucore gadgetron_toolbox_mri_core gadgetron_toolbox_gpunfft gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpuoperators
+  gadgetron_toolbox_cpucore gadgetron_toolbox_gpucore gadgetron_toolbox_mri_core gadgetron_toolbox_gpunfft gadgetron_toolbox_gpusolvers gadgetron_toolbox_gpuoperators gadgetron_toolbox_cpufft
   ${ISMRMRD_LIBRARIES} ${FFTW3_LIBRARIES} ${CUDA_LIBRARIES} ${ARMADILLO_LIBRARIES}
   optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
   )

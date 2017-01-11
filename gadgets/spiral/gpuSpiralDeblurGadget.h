@@ -104,7 +104,7 @@ namespace Gadgetron{
     boost::shared_array< ACE_Message_Queue<ACE_MT_SYNCH> > image_headers_queue_;
 
 	hoNDArray<float_complext> MFI_C;
-	hoNDArray<float_complext> exp_array;
+	hoNDArray<std::complex<float>> phase_mask;
   };
 }
 #endif //gpuSpiralDeblurGadget_H
