@@ -1346,11 +1346,12 @@ public:
             Gadgetron::hoNDArray< std::complex<float> > tmp(acq.getHead().number_of_samples,acq.getHead().active_channels);
             memcpy(tmp.get_data_ptr(), &acq.getDataPtr()[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
             
-            //Gadgetron::hoNDFFT<float>::instance()->ifft(&tmp, 0);
+            //Gadgetron::hoNDFFT<float>::instance()->ifft(&tmp, 0); //HERE IS WHERE WE DO THE TRANSFORM
             
             std::vector<float> input_data((float*)tmp.get_data_ptr(), (float*)tmp.get_data_ptr() + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
 
-            CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
+            CompressedBuffer<float> comp_buffer(input_data, local_tolerance); //Where the compression actually happens (NHLBIcompression.h)
+
             std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
  
             compressed_bytes_sent_ += serialized_buffer.size();

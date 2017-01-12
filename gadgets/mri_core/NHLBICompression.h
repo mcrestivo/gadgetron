@@ -9,6 +9,8 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fftw3.h>
+
 
 #pragma pack(push, 1)
 struct CompressionHeader
@@ -34,6 +36,20 @@ public:
     
     CompressedBuffer(std::vector<T>& d, T tolerance = -1.0, uint8_t precision_bits = 32)
     {
+	
+		//Transform
+		/*fftwf_complex *in, *out;
+		fftwf_plan p_fwd;
+		int N = d.size();
+		in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
+		out = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
+		p_fwd = fftwf_plan_dft_1d(N/2, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+		in = reinterpret_cast<fftwf_complex*>(&d[0]);
+		fftwf_execute(p_fwd);
+		memcpy(&d[0], out, sizeof(fftwf_complex) * N/2);
+		fftwf_destroy_plan(p_fwd);
+		fftwf_free(in); fftwf_free(out);*/
+		
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
 
@@ -61,6 +77,16 @@ public:
         for (size_t i = 0; i < d.size(); i++) {
             setValue(i,d[i]);
         }
+
+		/*fftwf_plan p_bkw;
+		in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
+		out = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
+		p_bkw = fftwf_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+		in = reinterpret_cast<fftwf_complex*>(&d[0]);
+		fftwf_execute(p_bkw);
+		memcpy(&d[0], out, sizeof(fftwf_complex) * N/2);
+		fftwf_destroy_plan(p_bkw);
+		fftwf_free(in); fftwf_free(out);*/	
     }
 
     float operator[](size_t idx)

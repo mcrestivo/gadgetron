@@ -31,6 +31,7 @@ include_directories(
         ${DCMTK_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/toolboxes/mri/pmri/gpu
         ${CMAKE_SOURCE_DIR}/toolboxes/nfft/gpu
+		${CMAKE_SOURCE_DIR}/toolboxes/fft/cpu
         ${CMAKE_SOURCE_DIR}/toolboxes/core
         ${CMAKE_SOURCE_DIR}/toolboxes/core/gpu
         ${CMAKE_SOURCE_DIR}/toolboxes/core/cpu
@@ -78,7 +79,8 @@ target_link_libraries(
     gadgetron_dicom
     gadgetron_gadgetbase
     gadgetron_toolbox_log
-    gadgetron_toolbox_cpucore 
+    gadgetron_toolbox_cpucore
+	gadgetron_toolbox_cpufft 
     ${ISMRMRD_LIBRARIES}
     optimized ${ACE_LIBRARIES}
     debug ${ACE_DEBUG_LIBRARY}
