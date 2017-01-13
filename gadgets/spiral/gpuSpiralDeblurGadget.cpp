@@ -537,7 +537,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		else{
 
 			// Upload data to GPU
-			cuNDArray<_complext> samples(&host_data_buffer_[set*slices_+slice]);
+			cuNDArray<_complext> samples(&host_data_buffer_[0]);
 
 			// Reconstuct on-resonant image
 			nfft_plan_.compute( &samples, &image, dcw_buffer_.get(), plan_type::NFFT_BACKWARDS_NC2C );
@@ -552,8 +552,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			hoNDArray<_complext> image1(&image_dims);
 			image0 = *(reg_image.to_host());
 			memcpy(stdimage0.get_data_ptr(), image0.get_data_ptr(), image0.get_number_of_elements()*sizeof(std::complex<float>));
-			Gadgetron::hoNDFFT<float>::instance()->fft(&stdimage0);
-			Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage0);
+			Gadgetron::hoNDFFT<float>::instance()->fft2c(stdimage0);
+			//Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage0);
 
 			//Deblur using Multi-frequency Interpolation
 			int fmax = 600;
@@ -600,9 +600,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			int D = int(samples_per_interleave_*Nints*num_coils);
 			_complext omega;
 			omp_set_dynamic(1);
-			int N = 4;
+			int N = 8;
 
-			if( phase_mask.get_number_of_elements() == 0 ) {
+			//if( phase_mask.get_number_of_elements() == 0 ) {
 				phase_mask = hoNDArray<std::complex<float>>(&image_dims);
 				//printf("Thread number = %d\n", omp_get_thread_num());
 				f = fmax*2./(L-1);
@@ -620,20 +620,22 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 				image1 = *(reg_image.to_host());
 				memcpy(stdimage1.get_data_ptr(), image1.get_data_ptr(), image1.get_number_of_elements()*sizeof(std::complex<float>));
-				Gadgetron::hoNDFFT<float>::instance()->fft(&stdimage1);
-				Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage1);
+				Gadgetron::hoNDFFT<float>::instance()->fft2c(stdimage1);
+				//Gadgetron::hoNDFFT<float>::instance()->fftshift2D(stdimage1);
+				//write_nd_array<std::complex<float>>( &stdimage0, "image0.cplx" );
+				//write_nd_array<std::complex<float>>( &stdimage1, "image1.cplx" );
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
 					phase_mask[i] = stdimage1[i]/stdimage0[i];
 				}
-			}
-			write_nd_array<std::complex<float>>( &phase_mask, "phase_mask.cplx" );
+			//}
+			//write_nd_array<std::complex<float>>( &phase_mask, "phase_mask.cplx" );
 
 			//start with -fmax image
 			//memcpy(temp_image.get_data_ptr(), stdimage0.get_data_ptr(), stdimage0.get_number_of_elements()*sizeof(std::complex<float>));
-			#ifdef USE_OMP
-			#pragma omp parallel for private (j,i) num_threads(N)
-			#endif
 			for (j = 0; j < (L-1)/2; j++){
+				#ifdef USE_OMP
+				#pragma omp parallel for num_threads(N)
+				#endif
 				for (i = 0; i < image_dims[0]*image_dims[1]; i++) {
 					stdimage0[i] *= std::exp(std::complex<float>(0,-1)*std::arg(phase_mask[i]));
 				}
