@@ -125,7 +125,8 @@ set( gadgetron_mricore_header_files GadgetMRIHeaders.h
                                     GenericReconNoiseStdMapComputingGadget.h 
                                     WhiteNoiseInjectorGadget.h
                                     NoiseSummaryGadget.h 
-                                    NHLBICompression.h )
+                                    NHLBICompression.h
+									fwht.h )
 
 set( gadgetron_mricore_src_files AcquisitionPassthroughGadget.cpp 
                                 AcquisitionFinishGadget.cpp 
@@ -226,7 +227,6 @@ target_link_libraries(gadgetron_mricore
     gadgetron_toolbox_cpuoperator
     gadgetron_toolbox_image_analyze_io
     ${ISMRMRD_LIBRARIES} 
-    ${FFTW3_LIBRARIES} 
     optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
     ${OPTIMIZED_GADGET_LIBS}
     ${Boost_LIBRARIES}

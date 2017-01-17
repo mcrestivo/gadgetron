@@ -41,6 +41,8 @@
 
 #include "NHLBICompression.h"
 #include "hoNDFFT.h"
+#include "hoNDArray_fileio.h"
+#include "fwht.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include "zfp/zfp.h"
@@ -316,7 +318,7 @@ public:
     }
 
     std::string s(buf);
-    std::cout << s;
+    //std::cout << s;
     delete[] buf;
   }  
 };
@@ -1345,11 +1347,15 @@ public:
 
             Gadgetron::hoNDArray< std::complex<float> > tmp(acq.getHead().number_of_samples,acq.getHead().active_channels);
             memcpy(tmp.get_data_ptr(), &acq.getDataPtr()[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
-            
-            //Gadgetron::hoNDFFT<float>::instance()->ifft(&tmp, 0); //HERE IS WHERE WE DO THE TRANSFORM
-            
             std::vector<float> input_data((float*)tmp.get_data_ptr(), (float*)tmp.get_data_ptr() + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
-
+			//if(acq.getHead().idx.kspace_encode_step_1 == acq.getHead().number_of_samples/4){
+            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
+            	for(int i = 0; i < acq.getHead().active_channels; i++){
+					 fwht(&input_data[0]+acq.getHead().number_of_samples*2*i,acq.getHead().number_of_samples*2); //HERE IS WHERE WE DO THE TRANSFORM
+				}
+				//memcpy(tmp.get_data_ptr(), &input_data[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
+            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmpifft.cplx" );
+			//}
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance); //Where the compression actually happens (NHLBIcompression.h)
 
             std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
@@ -1358,7 +1364,7 @@ public:
             uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
 
             if (acq.getHead().idx.kspace_encode_step_1 == 64 || acq.getHead().idx.kspace_encode_step_1 == 0|| acq.getHead().idx.kspace_encode_step_1 == 32) {
-                std::cout << "line: " << acq.getHead().idx.kspace_encode_step_1 << ": " << data_elements*2*sizeof(float) << " (" << serialized_buffer.size() << ") " << (1.0*data_elements*2*sizeof(float))/(serialized_buffer.size()) << std::endl;
+                //std::cout << "line: " << acq.getHead().idx.kspace_encode_step_1 << ": " << data_elements*2*sizeof(float) << " (" << serialized_buffer.size() << ") " << (1.0*data_elements*2*sizeof(float))/(serialized_buffer.size()) << std::endl;
             }
                             
             uint32_t bs = (uint32_t)serialized_buffer.size();

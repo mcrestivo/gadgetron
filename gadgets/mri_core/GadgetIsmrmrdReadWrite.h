@@ -14,6 +14,7 @@
 
 #include "NHLBICompression.h"
 #include "hoNDFFT.h"
+#include "fwht.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include <zfp/zfp.h>
@@ -269,7 +270,16 @@ namespace Gadgetron{
                 }
 
                 //Gadgetron::hoNDFFT<float>::instance()->fft(m2->getObjectPtr(),0);
-
+				int cha = m2->getObjectPtr()->get_size(1);
+				int samples = m2->getObjectPtr()->get_size(0);
+				std::cout << "channels = " << cha << std::endl;
+				std::cout << "samples = " << samples << std::endl;
+				bool transform = false;
+				if(transform){
+					for(int i = 0; i < cha; i++){
+						 ifwht(d_ptr+samples*2*i,samples*2); //HERE IS WHERE WE DO THE TRANSFORM
+					}
+				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
 
