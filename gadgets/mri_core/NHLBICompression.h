@@ -36,22 +36,26 @@ public:
     
     CompressedBuffer(std::vector<T>& d, T tolerance = -1.0, uint8_t precision_bits = 32)
     {
-	
+		std::cout << "in = " << d[4095] << std::endl;
 		//Transform
-		/*fftwf_complex *in, *out;
+		fftw_cleanup();
+		float *in, *out;
 		fftwf_plan p_fwd;
 		int N = d.size();
-		in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
-		out = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
-		p_fwd = fftwf_plan_dft_1d(N/2, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
-		in = reinterpret_cast<fftwf_complex*>(&d[0]);
-		fftwf_execute(p_fwd);
-		memcpy(&d[0], out, sizeof(fftwf_complex) * N/2);
-		fftwf_destroy_plan(p_fwd);
-		fftwf_free(in); fftwf_free(out);*/
+		in = fftwf_alloc_real(N);
+		out = fftwf_alloc_real(N);
+		p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
+		in = &d[0];
+		fftwf_execute_r2r(p_fwd, in, out);
+		for(int i =0; i < N; i++){
+			out[i] *= std::sqrt(1/(4*float(N)));
+		}
+		memcpy(&d[0], out, sizeof(float)*N);
+		fftw_cleanup();
 		
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
+		std::cout << "max_val = " << max_val_ << std::endl;
 
         if (tolerance > 0) {
             tolerance_ = tolerance;
@@ -77,16 +81,18 @@ public:
         for (size_t i = 0; i < d.size(); i++) {
             setValue(i,d[i]);
         }
-
-		/*fftwf_plan p_bkw;
-		in = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
-		out = (fftwf_complex*) fftwf_malloc(sizeof(fftwf_complex) * N/2);
-		p_bkw = fftwf_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
-		in = reinterpret_cast<fftwf_complex*>(&d[0]);
-		fftwf_execute(p_bkw);
-		memcpy(&d[0], out, sizeof(fftwf_complex) * N/2);
-		fftwf_destroy_plan(p_bkw);
-		fftwf_free(in); fftwf_free(out);*/	
+		/*
+		fftwf_plan p_bkw;
+		p_bkw = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT01, FFTW_ESTIMATE);
+		in = &d[0];
+		fftwf_execute_r2r(p_bkw, in, out);
+		for(int i =0; i < N; i++){
+			out[i] *= std::sqrt(1/(float(N)));
+		}
+		memcpy(&comp_[0], out, sizeof(float)*N);
+		fftw_cleanup();
+		std::cout << "out = " << comp_[4095] << std::endl;*/
+		
     }
 
     float operator[](size_t idx)
