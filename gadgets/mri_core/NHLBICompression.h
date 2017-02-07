@@ -35,24 +35,25 @@ public:
     }
     
     CompressedBuffer(std::vector<T>& d, T tolerance = -1.0, uint8_t precision_bits = 32)
-    {
-		std::cout << "in = " << d[4095] << std::endl;
-		//Transform
-		fftw_cleanup();
-		float *in, *out;
-		fftwf_plan p_fwd;
-		int N = d.size();
-		in = fftwf_alloc_real(N);
-		out = fftwf_alloc_real(N);
-		p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
-		in = &d[0];
-		fftwf_execute_r2r(p_fwd, in, out);
-		for(int i =0; i < N; i++){
-			out[i] *= std::sqrt(1/(4*float(N)));
+    {	bool use_transform = true;
+		if(use_transform){
+			std::cout << "in = " << d[4095] << std::endl;
+			//Transform
+			fftw_cleanup();
+			float *in, *out;
+			fftwf_plan p_fwd;
+			int N = d.size();
+			in = fftwf_alloc_real(N);
+			out = fftwf_alloc_real(N);
+			p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
+			in = &d[0];
+			fftwf_execute_r2r(p_fwd, in, out);
+			for(int i =0; i < N; i++){
+				out[i] *= std::sqrt(1/(2*float(N)));
+			}
+			memcpy(&d[0], out, sizeof(float)*N);
+			fftw_cleanup();
 		}
-		memcpy(&d[0], out, sizeof(float)*N);
-		fftw_cleanup();
-		
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
 		std::cout << "max_val = " << max_val_ << std::endl;

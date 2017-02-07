@@ -304,7 +304,7 @@ namespace Gadgetron{
 					in = d_ptr;
 					fftwf_execute_r2r(p_bkw, in, out);
 					for(int i =0; i < N; i++){
-						out[i] *= std::sqrt(1/(float(N)));
+						out[i] *= std::sqrt(1/(2*float(N)));
 					}
 					memcpy(d_ptr, out, sizeof(float)*N);
 					fftw_cleanup();
