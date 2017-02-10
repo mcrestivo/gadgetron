@@ -1350,7 +1350,7 @@ public:
             memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
             std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
 			if(acq.getHead().idx.kspace_encode_step_1 == 7){
-            	Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
+            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
 			}
 			bool use_transform = false;
 			int n = acq.getHead().number_of_samples;
@@ -1370,10 +1370,6 @@ public:
 						input_data[acq.getHead().number_of_samples*2*i+j] *= std::sqrt(2*n);
 					}		
 				}*/
-				for(int i = 0; i < acq.getHead().active_channels; i++){
-					//fwht(&input_data[0]+acq.getHead().number_of_samples*2*i,n*2); //HERE IS WHERE WE DO THE TRANSFORM			
-					dct_ii(n*2, (float*)&acq.getDataPtr()[n*2*i], (float*)&input_data[n*2*i]);
-				}
 			}
 				//memcpy(tmp.get_data_ptr(), &input_data[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
             	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmpifft.cplx" );
@@ -1395,17 +1391,6 @@ public:
             boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));
         }
     }
-
-	void dct_ii(int N, const float* x, float* X) {
-	  for (int k = 0; k < N; ++k) {
-		float sum = 0.;
-		float s = (k == 0) ? sqrt(.5) : 1.;
-		for (int n = 0; n < N; ++n) {
-		  sum += s * x[n] * cos(M_PI * (n + .5) * k / N);
-		}
-		X[k] = sum * sqrt(2. / N);
-	  }
-	}
 
     void send_ismrmrd_zfp_compressed_acquisition_precision(ISMRMRD::Acquisition& acq, unsigned int compression_precision) 
     {
@@ -1495,7 +1480,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
+            local_tolerance = 12*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79; //8 = sqrt(N), where N in ZFP always = 64
         }
 
         if (data_elements) {
