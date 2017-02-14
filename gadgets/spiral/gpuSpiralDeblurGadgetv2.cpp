@@ -638,6 +638,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 			cm2->getObjectPtr()->create(output_image.get_dimensions());
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
+			//memcpy(cm2->getObjectPtr()->get_data_ptr(), ho_image.get_data_ptr(), ho_image.get_number_of_elements()*sizeof(std::complex<float>));
 			header->cont(cm2);
 
 			if (this->next()->putq(header) < 0) {

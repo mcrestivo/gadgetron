@@ -245,6 +245,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	  GadgetContainerMessage< hoNDArray<float> > *m3)
   {
     // Gadget process begin
+	std::cout << "Process begins " << std::endl;
     
 	//Initialize timer for testing purposes (commented out)
 	GPUTimer *timer;
@@ -264,6 +265,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		if(flag_old != flag){ prepared_ = false;} //If the flag changes, then the NFFT needs to be re-prepared
 		flag_old = flag;
 	}
+
+	std::cout << interleaves_ << std::endl;
 
 	//Initialize and check if acquisition is noise and if it is the last in the slice
     bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
@@ -288,6 +291,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 			std::vector<size_t> trajectory_dimensions;
 			trajectory_dimensions.push_back(samples_per_interleave_*Nints);
+			std::cout << trajectory_dimensions[0] << std::endl;
 
 			host_traj_->create(&trajectory_dimensions);
 			host_weights_->create(&trajectory_dimensions);
@@ -296,6 +300,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			std::vector<size_t> data_dimensions;
 			data_dimensions.push_back(samples_per_interleave_*interleaves_);
 			data_dimensions.push_back(m1->getObjectPtr()->active_channels);
+			std::cout << data_dimensions[0] << std::endl;
 			host_data_buffer_ = boost::shared_array< hoNDArray<float_complext> > (new hoNDArray<float_complext>[slices_*sets_]);
 			if (!host_data_buffer_.get()) {
 				GDEBUG("Unable to allocate array for host data buffer\n");
@@ -350,6 +355,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			if (flag > 0) {
 				double fov2_ = (m1->getObjectPtr()->user_float[5]);
 				calc_vds(3*((m1->getObjectPtr()->user_float[3])/10.),(m1->getObjectPtr()->user_float[1])/10.,sample_time,sample_time,Nints,&fov2_,nfov,2*((m1->getObjectPtr()->user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
+				
 			}
 			//Otherwise use calc_vds parameters from header (set in process_config_
 			else{
@@ -670,6 +676,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 			cm2->getObjectPtr()->create(output_image.get_dimensions());
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
+			//memcpy(cm2->getObjectPtr()->get_data_ptr(), image0.get_data_ptr(), image0.get_number_of_elements()*sizeof(std::complex<float>));
 			header->cont(cm2);
 
 			if (this->next()->putq(header) < 0) {
