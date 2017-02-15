@@ -1353,8 +1353,10 @@ public:
             	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
 			}
 			bool use_transform = false;
-			int n = acq.getHead().number_of_samples;
+			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
 			if(use_transform){
+				//std::cout << "size " << N << std::endl;
+				Gadgetron::hoNDFFT<float>::instance()->dct(&input_data[0], N, 1);
 			/*	for(int N = 2; N < acq.getHead().number_of_samples*2; N = N*2){
 					if(std::floor(N/acq.getHead().number_of_samples)){
 						if(float(N)/acq.getHead().number_of_samples == 1){ n = N; }

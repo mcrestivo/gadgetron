@@ -252,6 +252,38 @@ template<class T> void hoNDFFT<T>::fft_int(hoNDArray< ComplexType >* input, size
 
 	*input *= scale;
 }
+
+
+template<class T> void hoNDFFT<T>::dct(float* data_ptr, int N, int sign)	{
+	if (sign != -1 && sign != 1) throw std::runtime_error("hoNDFFT::fft_int: illegal sign provided");
+	fftwf_plan fft_plan;
+	float scale = 1/std::sqrt(2*float(N));
+	//Allocate storage and make plan
+	{
+            std::lock_guard<std::mutex> guard(mutex_);
+            unsigned planner_flags = FFTW_ESTIMATE;
+			fftwf_r2r_kind kind = sign == 1 ? FFTW_REDFT10 : FFTW_REDFT01;
+            fft_plan = fftwf_plan_r2r_1d(N, data_ptr, data_ptr, kind, planner_flags);
+            //fftw_print_plan_(fft_plan);
+            if (fft_plan == NULL){
+                throw std::runtime_error("hoNDFFT: failed to create fft plan");
+            }
+	}
+	fftwf_execute_r2r(fft_plan,data_ptr,data_ptr);
+	for(int i = 0; i<N; i++){
+		data_ptr[i] *= scale;
+	}
+	//clean up
+	{
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (fft_plan != 0)
+	    {
+                fftwf_destroy_plan(fft_plan);
+            }
+	}
+}
+
+
 template<typename T>
 inline size_t hoNDFFT<T>::fftshiftPivot(size_t x)
 {

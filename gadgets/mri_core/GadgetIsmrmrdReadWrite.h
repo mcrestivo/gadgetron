@@ -17,6 +17,7 @@
 #include "hoNDArray_fileio.h"
 #include "fwht.h"
 #include <fftw3.h>
+#include <mutex>
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include <zfp/zfp.h>
@@ -87,6 +88,8 @@ namespace Gadgetron{
     public:
 		Gadgetron::hoNDArray< std::complex<float> > tmp;
         GADGETRON_READER_DECLARE(GadgetIsmrmrdAcquisitionMessageReader);
+		fftwf_plan p_bkw;
+		float *in, *out;
 
         virtual ACE_Message_Block* read(ACE_SOCK_Stream* stream)
         {
@@ -258,7 +261,7 @@ namespace Gadgetron{
 #endif //GADGETRON_COMPRESSION_ZFP
 
             } else if (m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2)) {
-				std::cout << "line = " << m1->getObjectPtr()->idx.kspace_encode_step_1 << std::endl;
+				//std::cout << "line = " << m1->getObjectPtr()->idx.kspace_encode_step_1 << std::endl;
                 //NHLBI Compression
                 uint32_t comp_size = 0;
                 if ((recv_count = stream->recv_n(&comp_size, sizeof(uint32_t))) <= 0) {
@@ -291,47 +294,22 @@ namespace Gadgetron{
                 //Gadgetron::hoNDFFT<float>::instance()->fft(m2->getObjectPtr(),0);
 				int cha = m2->getObjectPtr()->get_size(1);
 				int samples = m2->getObjectPtr()->get_size(0);
-				std::cout << "channels = " << cha << std::endl;
-				std::cout << "samples = " << samples << std::endl;
-				bool use_transform = true;
-				int n = samples;
+				//std::cout << "channels = " << cha << std::endl;
+				//std::cout << "samples = " << samples << std::endl;
+				bool use_transform = false;
+				int N = samples*cha*2;
 				if(use_transform){
-					/*for(int N = 2; N < samples*2; N = N*2){
-						if(std::floor(N/samples)){
-							if(float(N)/samples == 1){ n = N; }
-							else{n = N/2;}
-							break;
-						}
-					}
-					for(int i = 0; i < cha; i++){
-						ifwht(d_ptr+samples*2*i,n*2); //HERE IS WHERE WE DO THE TRANSFORM
-						for(int j = 0; j < n*2; j++){
-							d_ptr[samples*2*i+j] *= 1/std::sqrt(2*n);
-						}
-					}*/
-					fftwf_plan p_bkw;
-					float *in, *out;
-					int N = cha*samples*2;
-					in = fftwf_alloc_real(N);
-					out = fftwf_alloc_real(N);
-					p_bkw = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT01, FFTW_ESTIMATE);
-					in = d_ptr;
-					fftwf_execute_r2r(p_bkw, in, out);
-					for(int i =0; i < N; i++){
-						out[i] *= std::sqrt(1/(2*float(N)));
-					}
-					memcpy(d_ptr, out, sizeof(float)*N);
-					fftw_cleanup();
-					std::cout << "out = " << *(d_ptr+4095) << std::endl;
+					//std::cout << "size " << N << std::endl;
+					Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr,N,-1);
 				}
 				
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
 					tmp.create(samples,cha,samples/2);
 				}
 				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
-					std::cout << 7 << std::endl;
-					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_uncompressed.cplx");
+				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
+					//std::cout << 7 << std::endl;
+					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_uncompressed_trans.cplx");
 				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
@@ -351,6 +329,9 @@ namespace Gadgetron{
                 
             return m1;
         }
+
+protected:
+			std::mutex mutex_;
 
     };    
 }

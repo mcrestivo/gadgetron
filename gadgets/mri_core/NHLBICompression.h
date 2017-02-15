@@ -10,6 +10,7 @@
 #include <sstream>
 #include <vector>
 #include <fftw3.h>
+#include <mutex>
 
 
 #pragma pack(push, 1)
@@ -35,28 +36,35 @@ public:
     }
     
     CompressedBuffer(std::vector<T>& d, T tolerance = -1.0, uint8_t precision_bits = 32)
-    {	bool use_transform = true;
+    {	/*bool use_transform = true;
 		if(use_transform){
 			std::cout << "in = " << d[4095] << std::endl;
 			//Transform
-			fftw_cleanup();
-			float *in, *out;
 			fftwf_plan p_fwd;
-			int N = d.size();
-			in = fftwf_alloc_real(N);
-			out = fftwf_alloc_real(N);
-			p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
-			in = &d[0];
+			float *in, *out;
+			int N = d.size();			
+			{
+				std::lock_guard<std::mutex> guard(mutex_);
+				in = fftwf_alloc_real(N);
+				out = fftwf_alloc_real(N);
+				p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
+ 			}
+			memcpy(in, &d[0], sizeof(float)*N);
 			fftwf_execute_r2r(p_fwd, in, out);
 			for(int i =0; i < N; i++){
 				out[i] *= std::sqrt(1/(2*float(N)));
 			}
+			//std::cout << "out = " << *(d_ptr+4095) << std::endl;
 			memcpy(&d[0], out, sizeof(float)*N);
-			fftw_cleanup();
-		}
+
+			{
+				std::lock_guard<std::mutex> guard(mutex_);
+				fftwf_destroy_plan(p_fwd);
+				fftwf_free(in);fftwf_free(out);
+			}
+		}*/
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
-		std::cout << "max_val = " << max_val_ << std::endl;
 
         if (tolerance > 0) {
             tolerance_ = tolerance;
@@ -220,6 +228,9 @@ private:
 
         return static_cast<int64_t>(cbin);
     }
+
+protected:
+	std::mutex mutex_;
 };
 
 
