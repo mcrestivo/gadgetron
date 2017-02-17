@@ -63,6 +63,7 @@ public:
 				fftwf_free(in);fftwf_free(out);
 			}
 		}*/
+		//std::cout << "in = " << d[4095] << std::endl;
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
 

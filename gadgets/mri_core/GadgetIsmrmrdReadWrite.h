@@ -261,6 +261,8 @@ namespace Gadgetron{
 #endif //GADGETRON_COMPRESSION_ZFP
 
             } else if (m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2)) {
+
+
 				//std::cout << "line = " << m1->getObjectPtr()->idx.kspace_encode_step_1 << std::endl;
                 //NHLBI Compression
                 uint32_t comp_size = 0;
@@ -300,19 +302,20 @@ namespace Gadgetron{
 				int N = samples*cha*2;
 				if(use_transform){
 					//std::cout << "size " << N << std::endl;
-					Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr,N,-1);
+					Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr,N, 8, -1);
 				}
 				
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
-					tmp.create(samples,cha,samples/2);
+					tmp.create(samples,cha,16);
 				}
 				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
+				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
 					//std::cout << 7 << std::endl;
 					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_uncompressed_trans.cplx");
 				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
+
 
             } else { 
                 //Uncompressed data
