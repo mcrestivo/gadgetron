@@ -298,7 +298,7 @@ namespace Gadgetron{
 				int samples = m2->getObjectPtr()->get_size(0);
 				//std::cout << "channels = " << cha << std::endl;
 				//std::cout << "samples = " << samples << std::endl;
-				bool use_transform = false;
+				bool use_transform = true;
 				int N = samples*cha*2;
 				if(use_transform){
 					//std::cout << "size " << N << std::endl;

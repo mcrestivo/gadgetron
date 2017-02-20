@@ -1352,7 +1352,7 @@ public:
 			if(acq.getHead().idx.kspace_encode_step_1 == 7){
             	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
 			}
-			bool use_transform = false;
+			bool use_transform = true;
 			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
 			if(use_transform){
 				//std::cout << "size " << N << std::endl;

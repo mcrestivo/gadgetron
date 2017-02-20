@@ -97,11 +97,11 @@ namespace Gadgetron {
 				return GADGET_FAIL;
 			}
 			
-			if (buffer->trajectory_ == boost::none) {
+			/*if (buffer->trajectory_ == boost::none) {
 				GERROR("Trajectories not found. Bailing out.\n");
 				m1->release();
 				return GADGET_FAIL;
-			}
+			}*/
 
 			imarray.data_.create(image_dims_[0],image_dims_[1], 1, 1, N, S, SLC);
 
