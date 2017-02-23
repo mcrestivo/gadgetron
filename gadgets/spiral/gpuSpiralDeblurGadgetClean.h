@@ -35,7 +35,6 @@ namespace Gadgetron{
     GADGET_PROPERTY(reconstruction_os_factor_x, float, "Oversampling for reconstruction in x-direction", 1.0);
     GADGET_PROPERTY(reconstruction_os_factor_y, float, "Oversampling for reconstruction in y-direction", 1.0);
 	cuNDArray<float_complext> reg_image0;
-	hoNDArray<float> output_map;
 
     virtual int process_config(ACE_Message_Block* mb);
     
@@ -47,8 +46,6 @@ namespace Gadgetron{
   private:
     int samples_to_skip_start_;
     int samples_to_skip_end_;
-    int samples_per_interleave_;
-    int interleaves_;
     int slices_;
     int sets_;
     int device_number_;
@@ -69,6 +66,7 @@ namespace Gadgetron{
 	double sample_time;
 
     bool prepared_;
+	bool prepared_B0_;
 
     float kernel_width_;
     float oversampling_factor_;
@@ -81,20 +79,25 @@ namespace Gadgetron{
 
 	cuNDArray<floatd2> gpu_traj;
 	cuNDArray<float> gpu_weights;
+	cuNDArray<float> gpu_weights_B0;
 
 	cuNDArray<complext<float>> image;
 	cuNDArray<complext<float>> reg_image;
 	hoNDArray<complext<float>> host_image;	
+	hoNDArray<complext<float>> output_image;
+	hoNDArray<float> B0_map;
 
     std::vector<size_t> fov_vec_;
     std::vector<size_t> image_dimensions_recon_;
     uint64d2 image_dimensions_recon_os_;
 
     cuNFFT_plan<float,2> nfft_plan_;
+	cuNFFT_plan<float,2> nfft_plan_B0_;
     boost::shared_ptr< cuNDArray<complext<float>> > csm_;
 
 
 	hoNDArray<float_complext> MFI_C;
+	hoNDArray<float_complext> phase_mask;
   };
 }
 #endif //gpuSpiralDeblurGadget_H
