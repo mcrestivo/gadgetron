@@ -42,6 +42,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
     : samples_to_skip_start_(0)
     , samples_to_skip_end_(0)
     , prepared_(false)
+	, prepared_B0_(false)
   {
   }
 
@@ -203,21 +204,21 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			B0_map.create(&image_dims);
 			B0_map.fill(0.0f);
 			output_image.create(&image_dims);
+			{
+				hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
+				//write_nd_array<float>( &trajectory, "traj.real" );
+				hoNDArray<floatd2> host_traj(new hoNDArray<floatd2>(R0*E1));
+				hoNDArray<float> host_weights(new hoNDArray<float>(R0*E1));
+				for (int i = 0; i < (R0*E1); i++) {
+					//std::cout << i << std::endl;
+					host_traj[i]   = floatd2(trajectory[i*3]/krmax_,trajectory[i*3+1]/krmax_);
+					host_weights[i] = trajectory[i*3+2]/krmax_;
+				}		
 
-			hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
-			//write_nd_array<float>( &trajectory, "traj.real" );
-			hoNDArray<floatd2> host_traj(new hoNDArray<floatd2>(R0*E1));
-			hoNDArray<float> host_weights(new hoNDArray<float>(R0*E1));
-			for (int i = 0; i < (R0*E1); i++) {
-				//std::cout << i << std::endl;
-				host_traj[i]   = floatd2(trajectory[i*3]/krmax_,trajectory[i*3+1]/krmax_);
-				host_weights[i] = trajectory[i*3+2]/krmax_;
-			}		
-
-			//upload to gpu
-			gpu_traj = host_traj;
-			gpu_weights = host_weights;
-
+				//upload to gpu
+				gpu_traj = host_traj;
+				gpu_weights = host_weights;
+			}
 			//pre-process
 			nfft_plan_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
 			nfft_plan_.preprocess(&gpu_traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
@@ -225,56 +226,57 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		}
 
 		if(!prepared_B0_ && recon_bit_->rbit_.size() > 1){
-			ISMRMRD::AcquisitionHeader& B0_header = recon_bit_->rbit_[1].data_.headers_(0,0,0,0,0);
-			size_t R0 = recon_bit_->rbit_[1].data_.data_.get_size(0);
-			size_t E1 = recon_bit_->rbit_[1].data_.data_.get_size(1);	
-			hoNDArray<floatd2> B0_traj(new hoNDArray<floatd2>(R0*E1));
-			hoNDArray<float> B0_weights(new hoNDArray<float>(R0*E1));
-			float krmaxB0_ = 2.*(B0_header.user_float[4])/10000.; //Hack #mcr
-			if (true) {
-				//Setup calc_vds parameters
-				int     nfov   = 1;
-				int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
-				double  *xgrad;             /*  x-component of gradient.                */
-				double  *ygrad;             /*  y-component of gradient.                */
-				double  *x_trajectory;
-				double  *y_trajectory;
-				double  *weighting;
-				int     ngrad;
-				//Map trajecotry is different, parameters defined in user_floats
-				std::cout << "fov " << B0_header.user_float[5] << std::endl;
-				std::cout << "smax " << 3*B0_header.user_float[3]/10. << std::endl;
-				std::cout << "gmax " << B0_header.user_float[1]/10. << std::endl;
-				std::cout << "krmax " << 2*((B0_header.user_float[4])/10000.) << std::endl;
-				std::cout << "sampling_time " << sample_time << std::endl;
-				double fov2_ = (B0_header.user_float[5]);
-				calc_vds(3.*((B0_header.user_float[3])/10.),(B0_header.user_float[1])/10.,sample_time,sample_time,E1,&fov2_,nfov,2.*((B0_header.user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
-				calc_traj(xgrad, ygrad, R0, E1, sample_time, krmaxB0_, &x_trajectory, &y_trajectory, &weighting);
+			{
+				ISMRMRD::AcquisitionHeader& B0_header = recon_bit_->rbit_[1].data_.headers_(0,0,0,0,0);
+				size_t R0 = recon_bit_->rbit_[1].data_.data_.get_size(0);
+				size_t E1 = recon_bit_->rbit_[1].data_.data_.get_size(1);	
+				hoNDArray<floatd2> B0_traj(new hoNDArray<floatd2>(R0*E1));
+				hoNDArray<float> B0_weights(new hoNDArray<float>(R0*E1));
+				float krmaxB0_ = 2.*(B0_header.user_float[4])/10000.; //Hack #mcr
+				if (true) {
+					//Setup calc_vds parameters
+					int     nfov   = 1;
+					int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
+					double  *xgrad;             /*  x-component of gradient.                */
+					double  *ygrad;             /*  y-component of gradient.                */
+					double  *x_trajectory;
+					double  *y_trajectory;
+					double  *weighting;
+					int     ngrad;
+					//Map trajecotry is different, parameters defined in user_floats
+					std::cout << "fov " << B0_header.user_float[5] << std::endl;
+					std::cout << "smax " << 3*B0_header.user_float[3]/10. << std::endl;
+					std::cout << "gmax " << B0_header.user_float[1]/10. << std::endl;
+					std::cout << "krmax " << 2*((B0_header.user_float[4])/10000.) << std::endl;
+					std::cout << "sampling_time " << sample_time << std::endl;
+					double fov2_ = (B0_header.user_float[5]);
+					calc_vds(3.*((B0_header.user_float[3])/10.),(B0_header.user_float[1])/10.,sample_time,sample_time,E1,&fov2_,nfov,2.*((B0_header.user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
+					calc_traj(xgrad, ygrad, R0, E1, sample_time, krmaxB0_, &x_trajectory, &y_trajectory, &weighting);
 
-				for (int i = 0; i < (R0*E1); i++) {
-					B0_traj[i]   = floatd2(-x_trajectory[i]/(2.),-y_trajectory[i]/(2.));
-					B0_weights[i] = weighting[i];
+					for (int i = 0; i < (R0*E1); i++) {
+						B0_traj[i]   = floatd2(-x_trajectory[i]/(2.),-y_trajectory[i]/(2.));
+						B0_weights[i] = weighting[i];
+					}
+
+					delete [] xgrad;
+					delete [] ygrad;
+					delete [] x_trajectory;
+					delete [] y_trajectory;
+					delete [] weighting;
+				}
+				else{			
+					hoNDArray<float> trajectory = *(recon_bit_->rbit_[1].data_.trajectory_);
+					for (int i = 0; i < (R0*E1); i++) {
+						B0_traj[i]   = floatd2(trajectory[i*3]/krmaxB0_,trajectory[i*3+1]/krmaxB0_);
+						B0_weights[i] = trajectory[i*3+2]/krmaxB0_;
+					}		
 				}
 
-				delete [] xgrad;
-				delete [] ygrad;
-				delete [] x_trajectory;
-				delete [] y_trajectory;
-				delete [] weighting;
+				//upload to gpu
+				gpu_traj = B0_traj;
+				gpu_weights_B0 = B0_weights;
+				//write_nd_array<floatd2>( &gpu_traj, "maptraj.real" );
 			}
-			else{			
-				hoNDArray<float> trajectory = *(recon_bit_->rbit_[1].data_.trajectory_);
-				for (int i = 0; i < (R0*E1); i++) {
-					B0_traj[i]   = floatd2(trajectory[i*3]/krmaxB0_,trajectory[i*3+1]/krmaxB0_);
-					B0_weights[i] = trajectory[i*3+2]/krmaxB0_;
-				}		
-			}
-
-			//upload to gpu
-			gpu_traj = B0_traj;
-			gpu_weights_B0 = B0_weights;
-			//write_nd_array<floatd2>( &gpu_traj, "maptraj.real" );
-
 			//pre-process
 			nfft_plan_B0_.setup( from_std_vector<size_t,2>(image_dimensions_recon_), image_dimensions_recon_os_, kernel_width_ );
 			nfft_plan_B0_.preprocess(&gpu_traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
