@@ -268,7 +268,8 @@ template<class T> void hoNDFFT<T>::dct(float* data_ptr, int N, int num, int sign
 	{
             std::lock_guard<std::mutex> guard(mutex_);
             unsigned planner_flags = FFTW_ESTIMATE;
-			fftwf_r2r_kind kind = sign == 1 ? FFTW_REDFT10 : FFTW_REDFT01;
+			//fftwf_r2r_kind kind = sign == 1 ? FFTW_REDFT10 : FFTW_REDFT01;
+			fftwf_r2r_kind kind = FFTW_REDFT00;
             fft_plan = fftwf_plan_r2r_1d(n0,data_ptr,data_ptr,kind,planner_flags);
             if (fft_plan == NULL){
                 throw std::runtime_error("hoNDFFT: failed to create fft plan");

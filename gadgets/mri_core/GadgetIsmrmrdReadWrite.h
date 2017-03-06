@@ -102,6 +102,7 @@ namespace Gadgetron{
 
             m1->cont(m2);
 
+
             ssize_t recv_count = 0;
 
             if ((recv_count = stream->recv_n(m1->getObjectPtr(), sizeof(ISMRMRD::AcquisitionHeader))) <= 0) {
@@ -244,8 +245,8 @@ namespace Gadgetron{
 				}
 				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
-					std::cout << 7 << std::endl;
-					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_uncompressed_zfp.cplx");
+					//std::cout << 7 << std::endl;
+					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_spiral_uncompressed_zfp.cplx");
 				}
 
                 //At this point the data is no longer compressed and we should clear the flag
@@ -306,12 +307,12 @@ namespace Gadgetron{
 				}
 				
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
-					tmp.create(samples,cha,16);
+					tmp.create(samples,cha,8);
 				}
 				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
 					//std::cout << 7 << std::endl;
-					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_uncompressed_trans.cplx");
+					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_spiral_uncompressed_trans.cplx");
 				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);

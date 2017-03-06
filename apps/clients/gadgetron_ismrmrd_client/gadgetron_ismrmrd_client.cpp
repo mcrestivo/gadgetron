@@ -77,6 +77,7 @@ struct NoiseStatistics
     float sigma_mean;
     float sigma_rms;
     float noise_dwell_time_us;
+	float relative_receiver_noise_bw;
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -1342,15 +1343,15 @@ public:
             float local_tolerance = compression_tolerance;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79;
+                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
             }
 			if (acq.getHead().idx.kspace_encode_step_1 == 0){
-            	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,acq.getHead().number_of_samples/2);
+            	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,8);
 			}
             memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
             std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
 			if(acq.getHead().idx.kspace_encode_step_1 == 7){
-            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp.cplx" );
+            	Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_spiral.cplx" );
 			}
 			bool use_transform = true;
 			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
@@ -1482,7 +1483,7 @@ public:
         float local_tolerance = compression_tolerance;
         float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
         if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = 12*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*.79; //8 = sqrt(N), where N in ZFP always = 64
+            local_tolerance = 8*local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw; //8 = sqrt(N), where N in ZFP always = 64
         }
 
         if (data_elements) {
@@ -1845,6 +1846,13 @@ int main(int argc, char **argv)
                 std::stringstream ss;
                 ISMRMRD::serialize(h,ss);
                 xml_config = ss.str();
+
+				if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
+					noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
+				} else {
+					noise_stats.relative_receiver_noise_bw = 1.0;
+				}
+
             }
         }
     }
