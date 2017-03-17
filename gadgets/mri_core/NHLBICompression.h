@@ -16,7 +16,7 @@
 #pragma pack(push, 1)
 struct CompressionHeader
 {
-    uint64_t elements_;
+    uint16_t elements_;
     float scale_;
     uint8_t bits_;
 };
@@ -87,7 +87,8 @@ public:
         elements_ = d.size();
         size_t bytes_needed = static_cast<size_t>(std::ceil((bits_*elements_)/8.0f));
         comp_.resize(bytes_needed, 0);
-
+		
+		//#pragma omp parallel for
         for (size_t i = 0; i < d.size(); i++) {
             setValue(i,d[i]);
         }
@@ -137,27 +138,29 @@ public:
         return out;
     }
 
-    void deserialize(std::vector<uint8_t>& buffer)
+    size_t deserialize(std::vector<uint8_t>& buffer)
     {
-        if (buffer.size() <= sizeof(CompressionHeader)) {
-            throw std::runtime_error("Invalid buffer size");
-        }
+	    if (buffer.size() <= sizeof(CompressionHeader)) {
+	        throw std::runtime_error("Invalid buffer size");
+	    }
 
-        CompressionHeader h;
-        memcpy(&h, &buffer[0], sizeof(CompressionHeader));
-        
-        size_t bytes_needed = static_cast<size_t>(std::ceil((h.bits_*h.elements_)/8.0f));
-        if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
-            throw std::runtime_error("Incorrect number of bytes in buffer");
-        }
+	    CompressionHeader h;
+	    memcpy(&h, &buffer[0], sizeof(CompressionHeader));
+	    
+	    size_t bytes_needed = static_cast<size_t>(std::ceil((h.bits_*h.elements_)/8.0f));
+	    /*if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
+	        throw std::runtime_error("Incorrect number of bytes in buffer");
+	    }*/
 
-        this->bits_ = h.bits_;
-        this->elements_ = h.elements_;
-        this->scale_ = h.scale_;
-        this->tolerance_ = 0.5/h.scale_;
-        this->comp_.resize(bytes_needed,0);
+	    this->bits_ = h.bits_;
+	    this->elements_ = h.elements_;
+	    this->scale_ = h.scale_;
+	    this->tolerance_ = 0.5/h.scale_;
+	    this->comp_.resize(bytes_needed,0);
 
-        memcpy(&comp_[0], &buffer[sizeof(CompressionHeader)], bytes_needed);
+	    memcpy(&comp_[0], &buffer[sizeof(CompressionHeader)], bytes_needed);
+
+		return (bytes_needed+sizeof(CompressionHeader));
     }
 
 private:

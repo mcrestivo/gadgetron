@@ -352,10 +352,10 @@ namespace Gadgetron{
 			//We have to bring it back to absolute scaling on the data to figure out the rounding errors
 			absolute_compression_tolerance *= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
 			//Do the rounding for the exponent
-			absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
+			absolute_compression_tolerance = std::exp2(std::floor(std::log2(11.67*absolute_compression_tolerance/4)));
 			//Now scale back to noise sample reference
 			absolute_compression_tolerance /= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
-			absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
+			//absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
 			float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
 			GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
 			GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
