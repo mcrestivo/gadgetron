@@ -81,6 +81,11 @@ namespace Gadgetron{
 	cuNDArray<float> gpu_weights;
 	cuNDArray<float> gpu_weights_B0;
 
+	hoNDArray<float> host_weights;
+	hoNDArray<floatd2> host_traj;
+	hoNDArray<floatd2> B0_traj;
+	hoNDArray<float> B0_weights;
+
 	cuNDArray<complext<float>> image;
 	cuNDArray<complext<float>> reg_image;
 	hoNDArray<complext<float>> host_image;	
