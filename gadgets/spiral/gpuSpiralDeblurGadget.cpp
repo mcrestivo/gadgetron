@@ -282,7 +282,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		//Initialize traj and weight parameters if it is the first interleave or a map acquisiton & allocate data buffer
 		if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0 || flag > 0){
 			
-			traj_attached = 0; //1 = use attached trajectory, 0 = calc trajectory using calc_vds
+			traj_attached = 1; //1 = use attached trajectory, 0 = calc trajectory using calc_vds
 			sample_time = (1.0*Tsamp_ns_) * 1e-9;
 			samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
 
@@ -333,9 +333,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#pragma omp parallel for default(none) private(i) shared(co_ptr, we_ptr, p3, index)
 			#endif
 			for (i = 0; i < (samples_per_interleave_); i++) {	
-				  co_ptr[2*index+i*2]   = p3[i*3]/krmax_;
-				  co_ptr[2*index+i*2+1] = p3[i*3+1]/krmax_;
-				  we_ptr[index+i] = p3[i*3+2]/krmax_;
+				  co_ptr[2*index+i*2]   = p3[i*3];
+				  co_ptr[2*index+i*2+1] = p3[i*3+1];
+				  we_ptr[index+i] = p3[i*3+2];
 			}
 
 		}
