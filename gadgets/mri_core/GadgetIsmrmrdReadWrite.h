@@ -257,13 +257,13 @@ namespace Gadgetron{
 				//std::cout << "channels = " << cha << std::endl;
 				//std::cout << "samples = " << samples << std::endl;
 				*/
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
-					tmp.create(samples,cha,8);
+				if(tmp.get_number_of_elements() == 0){
+					tmp.create(samples,cha,128);
 				}
 				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
+				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
 					//std::cout << 7 << std::endl;
-					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_spiral_uncompressed_zfp.cplx");
+					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_random_uncompressed_zfp.cplx");
 				}
 
                 //At this point the data is no longer compressed and we should clear the flag
@@ -300,8 +300,8 @@ namespace Gadgetron{
 				float* d_ptr = (float*)m2->getObjectPtr()->get_data_ptr();
 				int cha = m2->getObjectPtr()->get_size(1);
 				int samples = m2->getObjectPtr()->get_size(0);
-				int bytes_needed = 0;
-				int total_size = 0;
+				size_t bytes_needed = 0;
+				size_t total_size = 0;
 				CompressedBuffer<float> comp;
 				bytes_needed = comp.deserialize(comp_buffer);
 				comp_buffer.erase(comp_buffer.begin(),comp_buffer.begin()+bytes_needed);
@@ -332,7 +332,7 @@ namespace Gadgetron{
                 //Gadgetron::hoNDFFT<float>::instance()->fft(m2->getObjectPtr(),0);
 				//std::cout << "channels = " << cha << std::endl;
 				//std::cout << "samples = " << samples << std::endl;
-				bool use_transform = true;
+				bool use_transform = false;
 				int N = samples*cha*2;
 				if(use_transform){
 					//std::cout << "size " << N << std::endl;
@@ -345,12 +345,12 @@ namespace Gadgetron{
 				}
 				
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
-					tmp.create(samples,cha,128);
+					//tmp.create(samples,cha,8);
 				}
-				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
+				//memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
+				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 7){
 					//std::cout << 7 << std::endl;
-					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_2DFT_uncompressed_trans.cplx");
+					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_spiral_uncompressed.cplx");
 				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);

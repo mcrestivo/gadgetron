@@ -70,13 +70,14 @@ public:
         if (tolerance > 0) {
             tolerance_ = tolerance;
             scale_ = 0.5/tolerance_;
-            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_+1)));
+            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_)));
             bits_ = 0;
             while (max_int) {
                 bits_++;
                 max_int = max_int>>1;
             }
             bits_++; //Signed
+			//bits_++;
         } else {
             bits_ = precision_bits;
             uint64_t max_int = (1<<(bits_-1))-1;
