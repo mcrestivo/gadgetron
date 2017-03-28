@@ -1528,10 +1528,9 @@ public:
 
 				std::random_device generator;
 				float abs_tol = std::exp2(std::floor(std::log2(local_tolerance)));
-				std::uniform_real_distribution<float> distribution(-abs_tol*10,abs_tol*10);
+				std::normal_distribution<float> distribution(0.0,1.0);
 				std::vector<float> data(acq.getHead().number_of_samples*acq.getHead().active_channels*2);
 				for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels*2; i++){
-					distribution.reset();
 					data[i] = distribution(generator);
 				}
 
