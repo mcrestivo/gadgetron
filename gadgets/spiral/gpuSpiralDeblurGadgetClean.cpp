@@ -212,7 +212,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			host_traj.create(R0*E1);
 			host_weights.create(R0*E1);
 
-			if (true) {
+			if (false) {
 				//Setup calc_vds parameters
 				int     nfov   = 1;
 				int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
@@ -240,8 +240,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			else{
 				hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
 				for (int i = 0; i < (R0*E1); i++) {
-					host_traj[i]   = floatd2(trajectory[i*3]/krmax_,trajectory[i*3+1]/krmax_);
-					host_weights[i] = trajectory[i*3+2]/krmax_;
+					host_traj[i]   = floatd2(trajectory[i*3],trajectory[i*3+1]);
+					host_weights[i] = trajectory[i*3+2];
 				}		
 			}		
 
@@ -264,7 +264,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			B0_weights.create(R0*E1);
 
 			float krmaxB0_ = 2.*(B0_header.user_float[4])/10000.; //Hack #mcr
-			if (true) {
+			if (false) {
 				//Setup calc_vds parameters
 				int     nfov   = 1;
 				int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
@@ -298,8 +298,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			else{			
 				hoNDArray<float> trajectory = *(recon_bit_->rbit_[1].data_.trajectory_);
 				for (int i = 0; i < (R0*E1); i++) {
-					B0_traj[i]   = floatd2(trajectory[i*3]/krmaxB0_,trajectory[i*3+1]/krmaxB0_);
-					B0_weights[i] = trajectory[i*3+2]/krmaxB0_;
+					B0_traj[i]   = floatd2(trajectory[i*3],trajectory[i*3+1]);
+					B0_weights[i] = trajectory[i*3+2];
 				}		
 			}
 
@@ -320,8 +320,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#pragma omp parallel for 
 			#endif
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/500.,2.) );
-				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/500.,2.) );
+				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
+				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -337,7 +337,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 				//std::cout << B0_map[i] << std::endl;
 			}
-			write_nd_array<float>( &B0_map, "B0map.real" );
+			write_nd_array<complext<float>>( &B0_temp_0, "B0_imag.cplx" );
 		}
 		
 		size_t R0 = host_data.get_size(0);
@@ -401,8 +401,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		host_image = *(reg_image.to_host());
 		nfft_plan_.fft(&reg_image, plan_type::NFFT_FORWARDS);
 		auto gridded_data_0 = *(reg_image.to_host());
-		//nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
-		//write_nd_array<complext<float>>( &host_image, "spiral_img.cplx" );
+		nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
 
 
 		if( phase_mask.get_number_of_elements() == 0 ) {
@@ -410,11 +409,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			phase_mask.fill(0.0f);
 			float f_step = fmax*2./(L-1);
 			std::complex<float> omega = std::complex<float>(0,2*M_PI*f_step*sample_time);
+			std::cout << omega << std::endl;
 			#ifdef USE_OMP
 			#pragma omp parallel for
 			#endif
-			for(int i = 0; i < R0*E1*CHA; i++) {
-				host_data[i] *= exp(omega*(float)(i%R0));
+			for(int r = 0; r < R0*E1*CHA; r++) {
+				host_data[r] *= std::exp(omega*float(r%R0));
 			}
 			gpu_data = *((hoNDArray<float_complext>*)&host_data);
 			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
@@ -453,6 +453,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			reg_image = gridded_data_0;
 			nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
 			temp_image = *(reg_image.to_host());
+			if(j == 5){
+				write_nd_array<_complext>( &temp_image, "temp5.cplx" );
+				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
+			}
 			#ifdef USE_OMP
 			#pragma omp parallel for private(i,mfc_index)
 			#endif

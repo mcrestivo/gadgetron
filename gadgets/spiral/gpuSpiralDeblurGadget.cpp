@@ -501,8 +501,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		if(flag > 0){
 			//filter data to ignore high-freq image components
 			hoNDArray<_complext> map_samples0_filt(&host_data_buffer_[set*slices_+slice]);
-			for(int i =0; i < samples_per_interleave_; i++){
-				map_samples0_filt[i] *= exp(-.5*pow(i/200.,2.) );
+			for(int i =0; i < samples_per_interleave_*num_coils; i++){
+				map_samples0_filt[i] *= exp(-.5*pow(i%samples_per_interleave_/200.,2.) );
 			}
 
 			// Upload map data to device
@@ -536,6 +536,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					output_map[i] = _real(arg(temp0[i]*conj(temp1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 					//std::cout << output_map[i] << std::endl;
 				}
+				write_nd_array<_real>( &output_map, "map_old.real" );
 			}
 		} //END MAP SCOPE
 
@@ -662,6 +663,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				Gadgetron::hoNDFFT<float>::instance()->ifftshift2D(stdimage1);
 				Gadgetron::hoNDFFT<float>::instance()->ifft(&stdimage1);
 				memcpy(temp_image.get_data_ptr(), stdimage1.get_data_ptr(), stdimage1.get_number_of_elements()*sizeof(std::complex<float>));
+				if(j == 5){
+					write_nd_array<_complext>( &temp_image, "temp5.cplx" );
+					write_nd_array<complex<float>>( &phase_mask, "phase_mask.cplx" );
+				}
 				#ifdef USE_OMP
 				#pragma omp parallel for private(i,mfc_index) num_threads(N)
 				#endif
