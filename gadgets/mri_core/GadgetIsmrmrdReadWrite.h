@@ -258,12 +258,12 @@ namespace Gadgetron{
 				//std::cout << "samples = " << samples << std::endl;
 				*/
 				if(tmp.get_number_of_elements() == 0){
-					tmp.create(samples,cha,128);
+					//tmp.create(samples,cha,128);
 				}
-				memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
+				//memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
 					//std::cout << 7 << std::endl;
-					Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_random_uncompressed_zfp.cplx");
+					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "tmp_random_uncompressed_zfp.cplx");
 				}
 
                 //At this point the data is no longer compressed and we should clear the flag

@@ -1258,20 +1258,27 @@ public:
         GadgetMessageIdentifier id;
         id.id = GADGET_MESSAGE_ISMRMRD_ACQUISITION;;
 
+        ISMRMRD::AcquisitionHeader h = acq.getHead(); //We will make a copy because we will be setting some flags
+        //bool is_compressed = h.isFlagSet(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
+
         boost::asio::write(*socket_, boost::asio::buffer(&id, sizeof(GadgetMessageIdentifier)));
         boost::asio::write(*socket_, boost::asio::buffer(&acq.getHead(), sizeof(ISMRMRD::AcquisitionHeader)));
 
         unsigned long trajectory_elements = acq.getHead().trajectory_dimensions*acq.getHead().number_of_samples;
         unsigned long data_elements = acq.getHead().active_channels*acq.getHead().number_of_samples;
+		//unsigned long compressed_elements = acq.getHead().size_compressed_buffer;
 
         if (trajectory_elements) {
             boost::asio::write(*socket_, boost::asio::buffer(&acq.getTrajPtr()[0], sizeof(float)*trajectory_elements));
         }
 
-
         if (data_elements) {
             boost::asio::write(*socket_, boost::asio::buffer(&acq.getDataPtr()[0], 2*sizeof(float)*data_elements));
         }
+
+        /*if (compressed_elements && is_compressed) {
+            boost::asio::write(*socket_, boost::asio::buffer(&acq.getCompBufferPtr()[0], sizeof(char)*compressed_elements));
+        }*/
     }
 
 
@@ -1317,7 +1324,7 @@ public:
     }
 
 
-    void send_ismrmrd_compressed_acquisition_tolerance(ISMRMRD::Acquisition& acq, float compression_tolerance, NoiseStatistics& stat) 
+    void send_ismrmrd_compressed_acquisition_tolerance(ISMRMRD::Acquisition& acq, float SNR_Loss, NoiseStatistics& stat) 
     {
         if (!socket_) {
             throw GadgetronClientException("Invalid socket.");
@@ -1343,21 +1350,24 @@ public:
         if (data_elements) {
             
 
-            float local_tolerance = compression_tolerance;
+            float sigma_noise = 1;
             float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
+			if(sigma == 0){ sigma = 1; stat.status = 1; }
             if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
+                sigma_noise = stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
             }
+			float local_tolerance = sigma_noise*std::sqrt(3)*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
+			if(acq.getHead().idx.kspace_encode_step_1 == 0){
+				//std::cout << local_tolerance << std::endl;
+			}
 			if (tmp.get_number_of_elements() == 0){
-				std::cout << "samples =" << acq.getHead().number_of_samples << std::endl;
-				std::cout << "channels =" << acq.getHead().active_channels << std::endl;
-            	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
+            	//tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
 			}
 			//std::cout << "k space encode line " << acq.getHead().idx.kspace_encode_step_1 << std::endl;
-            memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
+            //memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
             //std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
 			if(acq.getHead().idx.kspace_encode_step_1 == 127){
-            	Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_epi.cplx" );
+            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_epi.cplx" );
 			}
 			bool use_transform = false;
 			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
@@ -1471,7 +1481,7 @@ public:
 #endif //GADGETRON_COMPRESSION_ZFP
     }
 
-    void send_ismrmrd_zfp_compressed_acquisition_tolerance(ISMRMRD::Acquisition& acq, float compression_tolerance, NoiseStatistics& stat) 
+    void send_ismrmrd_zfp_compressed_acquisition_tolerance(ISMRMRD::Acquisition& acq, float SNR_Loss, NoiseStatistics& stat) 
     {
         
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -1496,11 +1506,11 @@ public:
             boost::asio::write(*socket_, boost::asio::buffer(&acq.getTrajPtr()[0], sizeof(float)*trajectory_elements));
         }
 
-        float local_tolerance = compression_tolerance;
-        float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
-        if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            local_tolerance = local_tolerance*stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
+        float sigma_noise = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
+        if (stat.status && sigma_noise > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
+            sigma_noise *= std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
         }
+		float local_tolerance = 11.669*sigma_noise*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
 
         if (data_elements) {
             size_t comp_buffer_size = 4*sizeof(float)*data_elements;
@@ -1524,7 +1534,7 @@ public:
 				compressed_size = compress_zfp_tolerance(&data[0],
 								                                         acq.getHead().number_of_samples*2, acq.getHead().active_channels,
 								                                         local_tolerance, comp_buffer, comp_buffer_size);
-*/
+
 
 				std::random_device generator;
 				float abs_tol = std::exp2(std::floor(std::log2(local_tolerance)));
@@ -1534,7 +1544,7 @@ public:
 					data[i] = distribution(generator);
 				}
 
-				if(true){
+				if(false){
 					if (tmp.get_number_of_elements() == 0){
 				    	tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
 					}
@@ -1544,11 +1554,11 @@ public:
 					}
 				}
 
-				compressed_size = compress_zfp_tolerance(&data[0],acq.getHead().number_of_samples*2, acq.getHead().active_channels,local_tolerance, comp_buffer, comp_buffer_size);
+				//compressed_size = compress_zfp_tolerance(&data[0],acq.getHead().number_of_samples*2, acq.getHead().active_channels,local_tolerance, comp_buffer, comp_buffer_size);*/
 
-                /*compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[0],
+                compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[0],
                                                          acq.getHead().number_of_samples*2, acq.getHead().active_channels,
-                                                         local_tolerance, comp_buffer, comp_buffer_size);*/
+                                                         local_tolerance, comp_buffer, comp_buffer_size);
 
                 compressed_bytes_sent_ += compressed_size;
                 uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
@@ -1741,6 +1751,7 @@ int main(int argc, char **argv)
     unsigned int compression_precision = 0;
     float compression_tolerance = 0.0;
     bool use_zfp_compression = false;
+	//bool save_compressed = false;
     
     po::options_description desc("Allowed options");
 
@@ -1760,6 +1771,7 @@ int main(int argc, char **argv)
         ("outformat,F", po::value<std::string>(&out_fileformat)->default_value("h5"), "Out format, h5 for hdf5 and hdr for analyze image")
         ("precision,P", po::value<unsigned int>(&compression_precision)->default_value(0), "Compression precision (bits)")
         ("tolerance,T", po::value<float>(&compression_tolerance)->default_value(0.0), "Compression tolerance (fraction of sigma, if no noise stats, assume sigma 1)")
+		//("Save,S", po::value<bool>(&save_compressed)->default_value(false), "Save in compressed format")
 #if defined GADGETRON_COMPRESSION_ZFP
         ("ZFP,Z", po::value<bool>(&use_zfp_compression)->default_value(false), "Use ZFP library for compression");
 #endif //GADGETRON_COMPRESSION_ZFP
@@ -1817,7 +1829,7 @@ int main(int argc, char **argv)
       ismrmrd_dataset->readHeader(xml_config);
     }
 
-    if (!vm.count("query")) {
+    if (!vm.count("query") && 0) {
       std::cout << "Gadgetron ISMRMRD client" << std::endl;
       std::cout << "  -- host            :      " << host_name << std::endl;
       std::cout << "  -- port            :      " << port << std::endl;
@@ -1912,80 +1924,165 @@ int main(int argc, char **argv)
         }
     }
     
+	//if(!save_compressed){
+		GadgetronClientConnector con;
+		con.set_timeout(timeout_ms);
+		
+		if ( out_fileformat == "hdr" )
+		{
+		    con.register_reader(GADGET_MESSAGE_ISMRMRD_IMAGE, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientAnalyzeImageMessageReader(hdf5_out_group)));
+		}
+		else
+		{
+		    con.register_reader(GADGET_MESSAGE_ISMRMRD_IMAGE, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientImageMessageReader(out_filename, hdf5_out_group)));
+		}
 
-    GadgetronClientConnector con;
-    con.set_timeout(timeout_ms);
-    
-    if ( out_fileformat == "hdr" )
-    {
-        con.register_reader(GADGET_MESSAGE_ISMRMRD_IMAGE, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientAnalyzeImageMessageReader(hdf5_out_group)));
-    }
-    else
-    {
-        con.register_reader(GADGET_MESSAGE_ISMRMRD_IMAGE, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientImageMessageReader(out_filename, hdf5_out_group)));
-    }
+		con.register_reader(GADGET_MESSAGE_DICOM_WITHNAME, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientBlobMessageReader(std::string(hdf5_out_group), std::string("dcm"))));
 
-    con.register_reader(GADGET_MESSAGE_DICOM_WITHNAME, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientBlobMessageReader(std::string(hdf5_out_group), std::string("dcm"))));
-
-    con.register_reader(GADGET_MESSAGE_DEPENDENCY_QUERY, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientDependencyQueryReader(std::string(out_filename))));			
-    con.register_reader(GADGET_MESSAGE_TEXT, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientTextReader()));
+		con.register_reader(GADGET_MESSAGE_DEPENDENCY_QUERY, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientDependencyQueryReader(std::string(out_filename))));			
+		con.register_reader(GADGET_MESSAGE_TEXT, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientTextReader()));
 			
-    try {
-        con.connect(host_name,port);
-        if (vm.count("config-local")) {
-            con.send_gadgetron_configuration_script(config_xml_local);
+		try {
+		    con.connect(host_name,port);
+		    if (vm.count("config-local")) {
+		        con.send_gadgetron_configuration_script(config_xml_local);
+		    } else {
+		        con.send_gadgetron_configuration_file(config_file);
+		    }
+
+		if (open_input_file) {
+		  con.send_gadgetron_parameters(xml_config);
+		  
+		  uint32_t acquisitions = 0;
+		  {
+			mtx.lock();
+		        acquisitions = ismrmrd_dataset->getNumberOfAcquisitions();
+		        mtx.unlock();
+		  }
+		  
+		  ISMRMRD::Acquisition acq_tmp;
+		  for (uint32_t i = 0; i < acquisitions; i++) {
+		        {
+			  {
+			boost::mutex::scoped_lock scoped_lock(mtx);
+			ismrmrd_dataset->readAcquisition(i, acq_tmp);
+			  }
+
+		          if (compression_precision > 0) {
+		              if (use_zfp_compression) {
+		                  con.send_ismrmrd_zfp_compressed_acquisition_precision(acq_tmp,compression_precision);
+		              } else {
+		                  con.send_ismrmrd_compressed_acquisition_precision(acq_tmp,compression_precision);
+		              }
+		          } else if (compression_tolerance > 0.0) {
+		              if (use_zfp_compression) {
+		                  con.send_ismrmrd_zfp_compressed_acquisition_tolerance(acq_tmp,compression_tolerance, noise_stats);
+		              } else {
+		                  con.send_ismrmrd_compressed_acquisition_tolerance(acq_tmp,compression_tolerance, noise_stats);
+		              }
+		          } else {
+		              con.send_ismrmrd_acquisition(acq_tmp);              
+		          }
+		        }
+		  }
+		}
+
+		    if (compression_precision > 0 || compression_tolerance > 0.0) {
+		        std::cout << "Compression ratio: " << con.compression_ratio() << std::endl;
+				if(use_zfp_compression){
+					  std::ofstream myfile;
+					  myfile.open ("CR_ZPP.txt", std::ios_base::app);
+					  myfile << std::to_string(con.compression_ratio()) + ", ";
+					  myfile.close();
+				}
+				else{
+					  std::ofstream myfile;
+					  myfile.open ("CR_NHLBI.txt", std::ios_base::app);
+					  myfile << std::to_string(con.compression_ratio()) + ", ";
+					  myfile.close();
+				}
+		    }
+
+		    con.send_gadgetron_close();
+		    con.wait();
+
+		} catch (std::exception& ex) {
+		    std::cout << "Error caught: " << ex.what() << std::endl;
+		return -1;
+		}
+	/*}
+	else{
+		uint32_t acquisitions = 0;
+		{
+		mtx.lock();
+		acquisitions = ismrmrd_dataset->getNumberOfAcquisitions();
+		mtx.unlock();
+		}
+		std::cout << "contains " << acquisitions << " acquisitions" << std::endl;
+
+		ISMRMRD::Dataset d(out_filename.c_str(),"dataset", true);
+		ISMRMRD::Acquisition acq_tmp;
+
+		uint64_t compressed_bytes_sent_ = 0;
+		uint64_t uncompressed_bytes_sent_ = 0;
+
+		for (uint32_t i = 0; i < acquisitions; i++) {
+			{			  
+			boost::mutex::scoped_lock scoped_lock(mtx);
+			ismrmrd_dataset->readAcquisition(i, acq_tmp);
+			}
+			float local_tolerance = compression_tolerance;
+			float sigma = noise_stats.sigma_min; //We use the minimum sigma of all channels to "cap" the error
+			if (noise_stats.status && sigma > 0 && noise_stats.noise_dwell_time_us && acq_tmp.getHead().sample_time_us) {
+				local_tolerance = local_tolerance*noise_stats.sigma_min*std::sqrt(noise_stats.noise_dwell_time_us/acq_tmp.getHead().sample_time_us)*noise_stats.relative_receiver_noise_bw;
+			}
+			int N = acq_tmp.getHead().active_channels*acq_tmp.getHead().number_of_samples*2;
+			std::vector<uint8_t> serialized_buffer;
+			int segments = acq_tmp.getHead().active_channels*4;	
+			int segment_size = N/segments;
+			for(int ch = 0; ch < segments; ch ++){
+			    std::vector<float> input_data((float*)&acq_tmp.getDataPtr()[0]+ch*segment_size, (float*)&acq_tmp.getDataPtr()[0]+(ch+1)*segment_size);
+			    CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
+				std::vector<uint8_t> serialized = comp_buffer.serialize();
+				if(ch == 0){serialized_buffer = serialized;}
+				else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+			}
+		    compressed_bytes_sent_ += serialized_buffer.size();
+		    uncompressed_bytes_sent_ += N*sizeof(float);          
+			acq_tmp.setCompBuffer((char*)&serialized_buffer[0], serialized_buffer.size());
+			d.appendAcquisition(acq_tmp);
+		}
+
+        ISMRMRD::IsmrmrdHeader h;
+        ISMRMRD::deserialize(xml_config.c_str(),h);
+        ISMRMRD::Compression c;
+        if (use_zfp_compression) {
+            c.compressionAlgorithm = "ZFP";
         } else {
-            con.send_gadgetron_configuration_file(config_file);
+            c.compressionAlgorithm = "NHLBI";
+        }
+        c.compressionTolerance = compression_tolerance;
+        c.compressionSigmaReference = 1.0;
+        c.compressionDwellTimeReference_us = 0.0;
+        if (noise_stats.status) {
+            c.compressionSigmaReference = noise_stats.sigma_min;
+            c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
+        }
+        if (!h.acquisitionSystemInformation) {
+            ISMRMRD::AcquisitionSystemInformation si;
+            si.compression = c;
+            h.acquisitionSystemInformation = si;
+        } else {
+            h.acquisitionSystemInformation().compression = c;
         }
 
-	if (open_input_file) {
-	  con.send_gadgetron_parameters(xml_config);
-	  
-	  uint32_t acquisitions = 0;
-	  {
-	    mtx.lock();
-            acquisitions = ismrmrd_dataset->getNumberOfAcquisitions();
-            mtx.unlock();
-	  }
-	  
-	  ISMRMRD::Acquisition acq_tmp;
-	  for (uint32_t i = 0; i < acquisitions; i++) {
-            {
-	      {
-		boost::mutex::scoped_lock scoped_lock(mtx);
-		ismrmrd_dataset->readAcquisition(i, acq_tmp);
-	      }
+        std::stringstream ss;
+        ISMRMRD::serialize(h,ss);
+        xml_config = ss.str();
 
-              if (compression_precision > 0) {
-                  if (use_zfp_compression) {
-                      con.send_ismrmrd_zfp_compressed_acquisition_precision(acq_tmp,compression_precision);
-                  } else {
-                      con.send_ismrmrd_compressed_acquisition_precision(acq_tmp,compression_precision);
-                  }
-              } else if (compression_tolerance > 0.0) {
-                  if (use_zfp_compression) {
-                      con.send_ismrmrd_zfp_compressed_acquisition_tolerance(acq_tmp,compression_tolerance, noise_stats);
-                  } else {
-                      con.send_ismrmrd_compressed_acquisition_tolerance(acq_tmp,compression_tolerance, noise_stats);
-                  }
-              } else {
-                  con.send_ismrmrd_acquisition(acq_tmp);              
-              }
-            }
-	  }
-	}
-
-        if (compression_precision > 0 || compression_tolerance > 0.0) {
-            std::cout << "Compression ratio: " << con.compression_ratio() << std::endl;
-        }
-
-        con.send_gadgetron_close();
-        con.wait();
-
-    } catch (std::exception& ex) {
-        std::cout << "Error caught: " << ex.what() << std::endl;
-	return -1;
-    }
+		d.writeHeader(xml_config);
+		std::cout << "compression ratio = " << float(uncompressed_bytes_sent_)/float(compressed_bytes_sent_) << std::endl;
+	}*/
 
     return 0;
 }

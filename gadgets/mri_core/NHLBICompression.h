@@ -139,7 +139,7 @@ public:
         return out;
     }
 
-    size_t deserialize(std::vector<uint8_t>& buffer)
+    int32_t deserialize(std::vector<uint8_t>& buffer)
     {
 	    if (buffer.size() <= sizeof(CompressionHeader)) {
 	        throw std::runtime_error("Invalid buffer size");
