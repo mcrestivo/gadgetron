@@ -1,6 +1,7 @@
 include_directories( 
     ${ARMADILLO_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIR}
+	${ISMRMRD_INCLUDE_DIR}
     ${FFTW3_INCLUDE_DIR}
     ${CMAKE_SOURCE_DIR}/toolboxes/mri/pmri/gpu
     ${CMAKE_SOURCE_DIR}/toolboxes/nfft/gpu
@@ -40,7 +41,7 @@ include_directories(
 
 #add_subdirectory(MRI)
 add_subdirectory(denoising)
-#add_subdirectory(deblurring)
+add_subdirectory(compression)
 add_subdirectory(registration)
 
 if(ISMRMRD_FOUND)
