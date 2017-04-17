@@ -337,7 +337,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 				//std::cout << B0_map[i] << std::endl;
 			}
-			write_nd_array<complext<float>>( &B0_temp_0, "B0_imag.cplx" );
+			//write_nd_array<float>( &B0_map, "B0_map.real" );
 		}
 		
 		size_t R0 = host_data.get_size(0);
@@ -454,8 +454,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
 			temp_image = *(reg_image.to_host());
 			if(j == 5){
-				write_nd_array<_complext>( &temp_image, "temp5.cplx" );
-				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
+				//write_nd_array<_complext>( &temp_image, "temp5.cplx" );
+				//write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
 			}
 			#ifdef USE_OMP
 			#pragma omp parallel for private(i,mfc_index)
@@ -505,7 +505,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 		cm2->getObjectPtr()->create(host_image.get_dimensions());
-		bool deblur = true;
+		bool deblur = false;
 		if(!deblur){
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), host_image.get_data_ptr(), host_image.get_number_of_elements()*sizeof(std::complex<float>));
 		}
