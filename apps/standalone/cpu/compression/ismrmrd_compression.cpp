@@ -72,7 +72,7 @@ int main(int argc, char** argv)
 	}
 	d.writeHeader(xml_config);
 
-
+/*
 
     if (open_input_file) {
       ismrmrd_dataset = boost::shared_ptr<ISMRMRD::Dataset>(new ISMRMRD::Dataset(out_filename.c_str(), "/dataset", false));
@@ -106,8 +106,7 @@ int main(int argc, char** argv)
 		//std::cout << "compression ratio = " << float(N*sizeof(float))/float(serialized_buffer.size()) << std::endl;
 	}
 	d2.writeHeader(xml_config);
-	write_nd_array<float>(&data1, "data1.real");
-	write_nd_array<float>(&data2, "data2.real");
+*/
 
 }
 

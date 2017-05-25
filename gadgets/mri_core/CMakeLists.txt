@@ -226,6 +226,7 @@ target_link_libraries(gadgetron_mricore
     gadgetron_toolbox_mri_core
     gadgetron_toolbox_cpuoperator
     gadgetron_toolbox_image_analyze_io
+	gadgetron_toolbox_gpuparallelmri
     ${ISMRMRD_LIBRARIES} 
     optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
     ${OPTIMIZED_GADGET_LIBS}

@@ -156,7 +156,7 @@ int main(int argc, char** argv)
 	//float local_tolerance = (float) parms.get_parameter('T')->get_float_value();
 	//std::cout << local_tolerance << std::endl;
 	int L = 200;
-	float max = 2;
+	float max = 1;
 	std::vector<float> CR(L);
 	std::vector<float> CR_ZFP(L);
 	std::vector<float> std_error(L);
@@ -166,9 +166,9 @@ int main(int argc, char** argv)
 		float local_tolerance = float(ii+1)/(float(L)/max);
 		std::cout << local_tolerance << std::endl;
 		//Generate random distribution
-		int32_t number_elements = 5*256*32;
+		int32_t number_elements = 10*256*16;
 		std::random_device generator;
-		std::normal_distribution<float> distribution(0.0,1);
+		std::normal_distribution<float> distribution(0,.1);
 		std::vector<float> data_in(number_elements);
 		std::vector<float> data_out(number_elements);
 		std::vector<float> data_out_zfp(number_elements);
@@ -202,15 +202,15 @@ int main(int argc, char** argv)
 		//std::cout << "total noise = " << std::sqrt(1+stdev*stdev) << std::endl;
 
 		//ZFP Compression/Decompression
-		local_tolerance = 16*local_tolerance;
+		local_tolerance = 11.588*local_tolerance*1e-6;
 		GadgetronClientConnector con;
 		size_t comp_buffer_size = 4*sizeof(float)*number_elements;
 		char* comp_buffer_zfp = new char[comp_buffer_size];
 		size_t compressed_size = 0;
-		compressed_size = con.compress_zfp_tolerance(&data_in[0], number_elements/36, 36, local_tolerance, comp_buffer_zfp, comp_buffer_size);
+		compressed_size = con.compress_zfp_tolerance(&data_in[0], number_elements/16, 16, local_tolerance, comp_buffer_zfp, comp_buffer_size);
 		compression_ratio = sizeof(float)*float(number_elements)/float(compressed_size);
 		std::cout << compression_ratio << std::endl;
-		con.decompress_zfp(comp_buffer_zfp, &data_out_zfp[0], number_elements/36, 36, comp_buffer_size);
+		con.decompress_zfp(comp_buffer_zfp, &data_out_zfp[0], number_elements/16, 16, comp_buffer_size);
 		delete [] comp_buffer_zfp;
 
 		for(int i = 0; i < diff.size(); i++){

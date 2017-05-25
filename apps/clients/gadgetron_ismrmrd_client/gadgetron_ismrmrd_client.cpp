@@ -72,6 +72,7 @@ std::string get_date_time_string()
 struct NoiseStatistics
 {
     bool status;
+	bool oversampled;
     uint16_t channels;
     float sigma_min;
     float sigma_max;
@@ -79,6 +80,7 @@ struct NoiseStatistics
     float sigma_rms;
     float noise_dwell_time_us;
 	float relative_receiver_noise_bw;
+	float sigma_diagonal[128];
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -1351,12 +1353,7 @@ public:
             
 
             float sigma_noise = 1;
-            float sigma = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
-			if(sigma == 0){ sigma = 1; stat.status = 1; }
-            if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-                sigma_noise = stat.sigma_min*std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
-            }
-			float local_tolerance = sigma_noise*std::sqrt(3)*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
+
 			if(acq.getHead().idx.kspace_encode_step_1 == 0){
 				//std::cout << local_tolerance << std::endl;
 			}
@@ -1407,6 +1404,25 @@ public:
             	throw GadgetronClientException("Invalid segment size");
         	}
 			for(int ch = 0; ch < segments; ch ++){
+
+		        //float sigma = stat.sigma_diagonal[int(std::floor(ch/4))]; //We use the minimum sigma of all channels to "cap" the error
+				float sigma = stat.sigma_diagonal[int(std::floor(ch/4))]; // use sqrt(2) is oversampled
+				//float sigma = stat.sigma_rms;
+				//std::cout << sigma << std::endl;
+				if(sigma == 0){ sigma = 1; stat.status = 1; }
+		        if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
+					if(stat.oversampled){
+						sigma /= std::sqrt(2.0); //noise std
+						sigma_noise = sigma/std::sqrt(2.0*stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us); //compensation for noise bandwidth factor	
+					}
+					else{
+						sigma /= std::sqrt(2.0); //noise std
+						sigma_noise = sigma/(std::sqrt(stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us)); //compensation for noise bandwidth factor + spiral fudge factor	
+					}
+					
+		        }
+				float local_tolerance = sigma_noise*std::sqrt(3)*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
+				//std::cout << local_tolerance << std::endl;
 		        std::vector<float> input_data((float*)&acq.getDataPtr()[0]+ch*segment_size, (float*)&acq.getDataPtr()[0]+(ch+1)*segment_size);
 		        CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
 				std::vector<uint8_t> serialized = comp_buffer.serialize();
@@ -1506,11 +1522,23 @@ public:
             boost::asio::write(*socket_, boost::asio::buffer(&acq.getTrajPtr()[0], sizeof(float)*trajectory_elements));
         }
 
-        float sigma_noise = stat.sigma_min; //We use the minimum sigma of all channels to "cap" the error
+		float sigma_noise = stat.sigma_rms;
         if (stat.status && sigma_noise > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-            sigma_noise *= std::sqrt(stat.noise_dwell_time_us/acq.getHead().sample_time_us)*stat.relative_receiver_noise_bw;
+			if(stat.oversampled){
+				sigma_noise /= std::sqrt(2.0); //noise std
+				sigma_noise /= std::sqrt(2.0*stat.relative_receiver_noise_bw)*(acq.getHead().sample_time_us/stat.noise_dwell_time_us); //compensation for noise bandwidth factor	
+				std::cout << acq.getHead().sample_time_us << std::endl;
+				std::cout << stat.noise_dwell_time_us << std::endl;
+				std::cout << stat.relative_receiver_noise_bw << std::endl;
+			}
+			else{
+				sigma_noise /= std::sqrt(2); //noise std
+				sigma_noise /= std::sqrt(stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us)*acq.getHead().sample_time_us/stat.noise_dwell_time_us; //compensation for noise bandwidth factor	
+			}
+			
         }
-		float local_tolerance = 11.669*sigma_noise*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
+		std::cout << sigma_noise << std::endl;
+		float local_tolerance = 11.5875*sigma_noise*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
 
         if (data_elements) {
             size_t comp_buffer_size = 4*sizeof(float)*data_elements;
@@ -1725,6 +1753,9 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
         stat.sigma_mean = meta.as_double("mean_sigma");
         stat.sigma_rms = meta.as_double("rms_sigma");
         stat.noise_dwell_time_us = meta.as_double("noise_dwell_time_us");
+		for(int l = 0; l < meta.length("diagonal"); l++){
+			stat.sigma_diagonal[l] = meta.as_double("diagonal",l);
+		}
     } catch (...) {
         stat.status = false;
     }
@@ -1899,7 +1930,15 @@ int main(int argc, char **argv)
                 c.compressionSigmaReference = 1.0;
                 c.compressionDwellTimeReference_us = 0.0;
                 if (noise_stats.status) {
-                    c.compressionSigmaReference = noise_stats.sigma_min;
+					if(h.encoding[0].trajectory == "spiral"){
+						//noise_stats.sigma_rms *= std::sqrt(2);
+						noise_stats.oversampled = false;
+						std::cout << h.encoding[0].trajectory << std::endl;
+					}
+					else{
+						noise_stats.oversampled = true;
+					}
+                    c.compressionSigmaReference = noise_stats.sigma_rms;
                     c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
                 }
                 if (!h.acquisitionSystemInformation) {
