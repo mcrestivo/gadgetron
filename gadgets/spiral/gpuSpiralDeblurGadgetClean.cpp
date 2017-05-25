@@ -320,8 +320,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#pragma omp parallel for 
 			#endif
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
-				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
+				//recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
+				//recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -337,7 +337,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 				//std::cout << B0_map[i] << std::endl;
 			}
-			//write_nd_array<float>( &B0_map, "B0_map.real" );
+			write_nd_array<complext<float>>( &B0_temp_0, "B0_image1.cplx" );
+			write_nd_array<complext<float>>( &B0_temp_1, "B0_image2.cplx" );
 		}
 		
 		size_t R0 = host_data.get_size(0);
@@ -505,7 +506,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 		cm2->getObjectPtr()->create(host_image.get_dimensions());
-		bool deblur = false;
+		bool deblur = true;
 		if(!deblur){
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), host_image.get_data_ptr(), host_image.get_number_of_elements()*sizeof(std::complex<float>));
 		}
