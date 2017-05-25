@@ -41,6 +41,7 @@ namespace Gadgetron {
       std::string compression_algorithm_;
       float compression_tolerance_;
       float compression_sigma_reference_;
+	  float compression_noise_scaling_;
       float compression_dwell_time_reference_us_;
       
 

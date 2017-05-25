@@ -18,6 +18,7 @@ namespace Gadgetron{
     protected:
       virtual int process(GadgetContainerMessage<IsmrmrdReconData>* m1);
       long long image_counter_;
+	  hoNDArray<std::complex<float> > chunk_reps;
     };
 }
 #endif //SIMPLERECONGADGET_H
