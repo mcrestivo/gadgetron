@@ -71,6 +71,8 @@ namespace Gadgetron{
     if ( current_ismrmrd_header_.acquisitionSystemInformation ) {
       receiver_noise_bandwidth_ = (float)(current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth ?
 					  *current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth : 0.793f);
+/*receiver_noise_bandwidth_ = (float)(current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth ?
+					  *current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth : 1.0f);*/
       
       GDEBUG("receiver_noise_bandwidth_ is %f\n", receiver_noise_bandwidth_);
     }
@@ -164,6 +166,8 @@ namespace Gadgetron{
         compression_algorithm_ = comp_info.compressionAlgorithm;
         compression_tolerance_ = comp_info.compressionTolerance;
         compression_sigma_reference_ = comp_info.compressionSigmaReference;
+		compression_noise_scaling_ = comp_info.NoiseScalingFactor;
+		std::cout << comp_info.NoiseScalingFactor << std::endl;
         compression_dwell_time_reference_us_ = comp_info.compressionDwellTimeReference_us;       
     }
 
@@ -334,53 +338,61 @@ namespace Gadgetron{
       if (number_of_noise_samples_ > 0 ) {
 	GDEBUG("Calculating noise decorrelation\n");
 	
-	noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
-	
+		noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
+		size_t c = noise_prewhitener_matrixf_.get_size(0);
+		hoNDArray<std::complex<float> > compression_matrix;
+		compression_matrix.create(c,c);
+		compression_matrix.fill(std::complex<float>(0.0,0.0));
+   		for (size_t cha = 0; cha < c; cha++)
+        {
+            compression_matrix(cha, cha) = 1;
+        }
+        std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
+		std::complex<float>* cptr = compression_matrix.get_data_ptr(); 
+		bool use_rms = false;
         if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
-            //compression_sigma_reference_ *= std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_)*receiver_noise_bandwidth_;
-			float compression_sigma_ = compression_sigma_reference_*std::sqrt(2*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
-			//float absolute_compression_tolerance = (compression_sigma_reference_)*std::sqrt(3*compression_tolerance_*(compression_tolerance_+2));            
-			float absolute_compression_variance = compression_sigma_*compression_sigma_*(1/std::pow((1-compression_tolerance_),2)-1);
-            //GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
-            //GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
-            size_t c = noise_prewhitener_matrixf_.get_size(0);
+            for (size_t i = 0; i <  c; i++) {
+				//float compression_sigma_ = std::sqrt(std::real(dptr[i*c+i]));
+				float absolute_compression_variance = use_rms ? std::pow(compression_sigma_reference_,2)*(1/std::pow((1-compression_tolerance_),2)-1) : std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);   
+
+				//float absolute_compression_variance = 2.*std::real(dptr[i*c+i])/2.*(1/std::pow((1-compression_tolerance_),2)-1);
+				//float absolute_compression_variance = std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);//not over-sampled
+                //cptr[i*c+i] = std::complex<float>((1-compression_tolerance_),0.0);
+				std::cout << compression_noise_scaling_ << std::endl;
+				dptr[i*c+i] += std::complex<float>(compression_noise_scaling_*compression_noise_scaling_*absolute_compression_variance,0.0);
+				
+				std::cout << dptr[i*c+i] << std::endl;
+            }
+        }
+		else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
+
+			//float zfp_scales[4] = {.08,.107,.0711,.08};
+			float bw_scale_factor = std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
+			//float bw_scale_factor = std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);//spiral
+			//absolute_compression_tol *= bw_scale_factor;
+			float absolute_compression_variance = 1;
+            //size_t c = noise_prewhitener_matrixf_.get_size(0);
             std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
             for (size_t i = 0; i <  c; i++) {
-                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
-				//compression_sigma_reference_ = std::sqrt(std::real(dptr[i*c+i]));
-				//compression_sigma_reference_ *= std::sqrt(std::sqrt(2*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_));
-				//compression_sigma_reference_ = std::sqrt(std::real(dptr[i*c+i])/2);
-				//compression_sigma_reference_ *= std::sqrt(2*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
-				//std::cout << receiver_noise_bandwidth_ << std::endl;
-				//float absolute_compression_variance = compression_sigma_reference_*compression_sigma_reference_*(1/std::pow((1-compression_tolerance_),2)-1);
-                //dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
-            }
-        }else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
-			//compression_sigma_reference_ *= std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_)*receiver_noise_bandwidth_;
-			//float absolute_compression_tolerance = 11.5875*compression_sigma_reference_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1);
 
-			//We have to bring it back to absolute scaling on the data to figure out the rounding errors
-			//absolute_compression_tolerance *= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
-			//Do the rounding for the exponent
-			//absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
-			//Now scale back to noise sample reference
-			//absolute_compression_tolerance /= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
-			//absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
-			//float absolute_compression_variance = .0074*absolute_compression_tolerance*absolute_compression_tolerance;
-			//GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
-			//GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
-			size_t c = noise_prewhitener_matrixf_.get_size(0);
-			std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
-			for (size_t i = 0; i <  c; i++) {
-				//GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
-				//dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
+				float compression_sigma_ = use_rms ? compression_sigma_reference_ : std::sqrt(std::real(dptr[i*c+i]));
+				compression_sigma_ /= bw_scale_factor;
+				compression_sigma_ *= compression_noise_scaling_; 
+				std::cout << 11.8*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1) << std::endl;          
+				float absolute_compression_tol = std::exp2(std::floor(std::log2(11.8*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1))));
+				//std::cout << absolute_compression_tol << std::endl; 
+				absolute_compression_tol *= bw_scale_factor;
+				absolute_compression_variance = .0072*std::pow(absolute_compression_tol,2);
+                //cptr[i*c+i] = std::complex<float>(compression_sigma_/std::sqrt(absolute_compression_variance+std::pow(compression_sigma_,2)),0.0);
+				dptr[i*c+i] += std::complex<float>(std::sqrt(2)*absolute_compression_variance,0.0);
+				//std::cout << cptr[i*c+i] << std::endl;
             }
 		}
 		write_nd_array<std::complex<float>>( &noise_prewhitener_matrixf_, "noise_covar_matrix.cplx" );
 
 	//Mask out scale  only channels
-	size_t c = noise_prewhitener_matrixf_.get_size(0);
-	std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
+	//size_t c = noise_prewhitener_matrixf_.get_size(0);
+	//std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
 	for (unsigned int ch = 0; ch < scale_only_channels_.size(); ch++) {
 	  for (size_t i = 0; i <  c; i++) {
 	    for (size_t j = 0; j < c; j++) {
@@ -405,6 +417,8 @@ namespace Gadgetron{
             //Cholesky and invert lower triangular
             arma::cx_fmat noise_covf = as_arma_matrix(&noise_prewhitener_matrixf_);
             noise_covf = arma::inv(arma::trimatu(arma::chol(noise_covf)));
+			//hoNDArray<std::complex<float> > tmp_pre(noise_prewhitener_matrixf_);
+			//gemm(noise_prewhitener_matrixf_, tmp_pre, compression_matrix);
         }
 
         noise_decorrelation_calculated_ = true;
@@ -504,42 +518,28 @@ namespace Gadgetron{
                if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
                    noise_bw_scale_factor_ = 1.0f;
                } else {
-					if(is_oversampled){
-                   		noise_bw_scale_factor_ = (float)std::sqrt(2.0*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
-					}
-					else{
-				   		noise_bw_scale_factor_ = (float)std::sqrt((acquisition_dwell_time_us_/noise_dwell_time_us_)*receiver_noise_bandwidth_); //removed sqrt(2) for non-oversampled data
-					}
-				   //std::cout << receiver_noise_bandwidth_ <<std::endl;
+		           	noise_bw_scale_factor_ = (float)std::sqrt(2*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
+					//noise_bw_scale_factor_ = (float)std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);//spiral
+				 	//std::cout << receiver_noise_bandwidth_ <<std::endl;
 					//std::cout << acquisition_dwell_time_us_ <<std::endl;
-					//meanstd::cout << noise_dwell_time_us_ <<std::endl;
+					//std::cout << noise_dwell_time_us_ <<std::endl;
                }
 
-               *m2->getObjectPtr() *= std::complex<float>(noise_bw_scale_factor_,0.0); //Scaling
+                //
+				*m2->getObjectPtr() *= std::complex<float>(noise_bw_scale_factor_,0.0); //Scaling
+				//std::cout << noise_bw_scale_factor_ << std::endl;
 				//float compression_sigma = compression_sigma_reference_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1);
 				if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")){
-					if(is_oversampled){
-						*m2->getObjectPtr() /= std::complex<float>(std::sqrt(1/std::pow(1-compression_tolerance_,2)),0); //Scaling
-					}
-					else{
-						*m2->getObjectPtr() /= std::complex<float>(std::sqrt(1/std::pow(1-compression_tolerance_,2)),0); //Scaling
-					}
+					//*m2->getObjectPtr() *= std::complex<float>((1-compression_tolerance_),0); //Scaling
 				}
 				else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
-					if(is_oversampled){ compression_sigma_reference_ /= noise_bw_scale_factor_*std::sqrt(2*3.9/5); }
-					if(!is_oversampled){ compression_sigma_reference_ /= noise_bw_scale_factor_*std::sqrt(2)*(3.9/5); }
-					std::cout << compression_sigma_reference_ << std::endl;
-					float absolute_compression_tolerance = 11.5785*compression_sigma_reference_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1);
+					/*compression_sigma_reference_ *= noise_bw_scale_factor_/std::sqrt(2);
+					float absolute_compression_tolerance = 13.17*compression_sigma_reference_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1);
+					std::cout << absolute_compression_tolerance << std::endl;
 					absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
-					*m2->getObjectPtr() /= std::complex<float>(std::sqrt(std::pow(1/(11.5785)*absolute_compression_tolerance,2)+std::pow(compression_sigma_reference_,2))/compression_sigma_reference_,0);
-					if(is_oversampled){ compression_sigma_reference_ *= noise_bw_scale_factor_*std::sqrt(2*3.9/5); }
-					if(!is_oversampled){ compression_sigma_reference_ *= noise_bw_scale_factor_*std::sqrt(2)*(3.9/5); }
-					//if(!is_oversampled){ compression_sigma_reference_ *= std::sqrt(1.25)*1.03; }
-					//if(is_oversampled){ compression_sigma_reference_ *= std::sqrt(2.0)*1.03; }
-					//if(!is_oversampled){ compression_sigma_reference_ *= std::sqrt(2.0); }
-					//*m2->getObjectPtr() /= std::complex<float>(1+compression_tolerance_,0);
-					//std::cout << std::complex<float>(std::sqrt(std::pow(.0863*absolute_compression_tolerance,2)+std::pow(compression_sigma_reference_,2))/compression_sigma_reference_,0) <<std::endl;
-					//std::cout << compression_sigma_reference_ << std::endl;
+					*m2->getObjectPtr() /= std::complex<float>(std::sqrt(std::pow(1/13.17*absolute_compression_tolerance,2)+std::pow(compression_sigma_reference_,2))/compression_sigma_reference_,0);
+std::cout << std::complex<float>(std::sqrt(std::pow(1/13.17*absolute_compression_tolerance,2)+std::pow(compression_sigma_reference_,2))/compression_sigma_reference_,0) << std::endl;
+					compression_sigma_reference_ /= noise_bw_scale_factor_/std::sqrt(2);*/
 				}
           } else {
                if (!pass_nonconformant_data_) {

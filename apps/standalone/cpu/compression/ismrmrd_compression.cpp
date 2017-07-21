@@ -63,11 +63,20 @@ int main(int argc, char** argv)
 		boost::mutex::scoped_lock scoped_lock(mtx);
 		ismrmrd_dataset->readAcquisition(i, acq_tmp);
 		}
+
+				std::random_device generator;
+				std::normal_distribution<float> distribution(0.0,4e-6);
+				
+				float* dptr = (float*)acq_tmp.getDataPtr();
+				for(int i = 0; i < acq_tmp.getHead().number_of_samples*acq_tmp.getHead().active_channels*2; i++){
+					dptr[i] += distribution(generator);
+				}
+
 		if(i == 0){
 			data1.create(acquisitions,2*acq_tmp.getHead().number_of_samples*acq_tmp.getHead().active_channels);
 		}
 		memcpy(data1.get_data_ptr()+i*2*acq_tmp.getHead().number_of_samples*acq_tmp.getHead().active_channels,acq_tmp.getDataPtr(),2*acq_tmp.getHead().number_of_samples*acq_tmp.getHead().active_channels*sizeof(float));
-		d.appendAcquisitionCompressed(acq_tmp, local_tolerance);
+		d.appendAcquisition(acq_tmp);
 		//std::cout << "compression ratio = " << float(N*sizeof(float))/float(serialized_buffer.size()) << std::endl;
 	}
 	d.writeHeader(xml_config);
