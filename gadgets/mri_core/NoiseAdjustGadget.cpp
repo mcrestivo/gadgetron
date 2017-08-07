@@ -71,8 +71,8 @@ namespace Gadgetron{
     if ( current_ismrmrd_header_.acquisitionSystemInformation ) {
       receiver_noise_bandwidth_ = (float)(current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth ?
 					  *current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth : 0.793f);
-/*receiver_noise_bandwidth_ = (float)(current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth ?
-					  *current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth : 1.0f);*/
+receiver_noise_bandwidth_ = (float)(current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth ?
+					  *current_ismrmrd_header_.acquisitionSystemInformation->relativeReceiverNoiseBandwidth : 1.0f);
       
       GDEBUG("receiver_noise_bandwidth_ is %f\n", receiver_noise_bandwidth_);
     }
@@ -349,25 +349,27 @@ namespace Gadgetron{
         }
         std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
 		std::complex<float>* cptr = compression_matrix.get_data_ptr(); 
+		float bw_scale_factor = acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_;
 		bool use_rms = false;
         if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
             for (size_t i = 0; i <  c; i++) {
 				//float compression_sigma_ = std::sqrt(std::real(dptr[i*c+i]));
-				float absolute_compression_variance = use_rms ? std::pow(compression_sigma_reference_,2)*(1/std::pow((1-compression_tolerance_),2)-1) : std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);   
+				float absolute_compression_variance = use_rms ? std::pow(compression_sigma_reference_,2)*(1/std::pow((1-compression_tolerance_),2)-1) : std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);
 
 				//float absolute_compression_variance = 2.*std::real(dptr[i*c+i])/2.*(1/std::pow((1-compression_tolerance_),2)-1);
 				//float absolute_compression_variance = std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);//not over-sampled
                 //cptr[i*c+i] = std::complex<float>((1-compression_tolerance_),0.0);
 				std::cout << compression_noise_scaling_ << std::endl;
-				dptr[i*c+i] += std::complex<float>(compression_noise_scaling_*compression_noise_scaling_*absolute_compression_variance,0.0);
+				dptr[i*c+i] += std::complex<float>(absolute_compression_variance*std::pow(compression_noise_scaling_,2),0.0);
 				
-				std::cout << dptr[i*c+i] << std::endl;
+				std::cout << "acq dwell time = " << acquisition_dwell_time_us_ << std::endl;
+				std::cout << "noise dwell time = " << noise_dwell_time_us_ << std::endl;
+				std::cout << "noise bw = " << receiver_noise_bandwidth_ << std::endl;
             }
         }
 		else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
 
 			//float zfp_scales[4] = {.08,.107,.0711,.08};
-			float bw_scale_factor = std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
 			//float bw_scale_factor = std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);//spiral
 			//absolute_compression_tol *= bw_scale_factor;
 			float absolute_compression_variance = 1;
@@ -375,16 +377,17 @@ namespace Gadgetron{
             std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
             for (size_t i = 0; i <  c; i++) {
 
-				float compression_sigma_ = use_rms ? compression_sigma_reference_ : std::sqrt(std::real(dptr[i*c+i]));
-				compression_sigma_ /= bw_scale_factor;
-				compression_sigma_ *= compression_noise_scaling_; 
-				std::cout << 11.8*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1) << std::endl;          
-				float absolute_compression_tol = std::exp2(std::floor(std::log2(11.8*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1))));
+				float compression_sigma_ = use_rms ? compression_sigma_reference_/std::sqrt(2.) : std::sqrt(std::real(dptr[i*c+i]))/std::sqrt(2.);
+				//compression_sigma_ = use_rms ? compression_sigma_reference_ : std::sqrt(std::real(dptr[i*c+i]));
+				compression_sigma_ /= std::sqrt(bw_scale_factor); 
+				compression_sigma_ *= compression_noise_scaling_;
+				std::cout << 14.*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1) << std::endl;          
+				float absolute_compression_tol = std::exp2(std::floor(std::log2(14.*compression_sigma_*std::sqrt(1/std::pow((1-compression_tolerance_),2)-1))));
 				//std::cout << absolute_compression_tol << std::endl; 
-				absolute_compression_tol *= bw_scale_factor;
-				absolute_compression_variance = .0072*std::pow(absolute_compression_tol,2);
+				//absolute_compression_tol *= std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_); 
+				absolute_compression_variance = std::pow(.0714*absolute_compression_tol,2);
                 //cptr[i*c+i] = std::complex<float>(compression_sigma_/std::sqrt(absolute_compression_variance+std::pow(compression_sigma_,2)),0.0);
-				dptr[i*c+i] += std::complex<float>(std::sqrt(2)*absolute_compression_variance,0.0);
+				dptr[i*c+i] += std::complex<float>(2.*absolute_compression_variance*bw_scale_factor,0.0);
 				//std::cout << cptr[i*c+i] << std::endl;
             }
 		}
@@ -518,7 +521,7 @@ namespace Gadgetron{
                if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
                    noise_bw_scale_factor_ = 1.0f;
                } else {
-		           	noise_bw_scale_factor_ = (float)std::sqrt(2*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
+		           	noise_bw_scale_factor_ = (float)std::sqrt(2.*acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);
 					//noise_bw_scale_factor_ = (float)std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_*receiver_noise_bandwidth_);//spiral
 				 	//std::cout << receiver_noise_bandwidth_ <<std::endl;
 					//std::cout << acquisition_dwell_time_us_ <<std::endl;

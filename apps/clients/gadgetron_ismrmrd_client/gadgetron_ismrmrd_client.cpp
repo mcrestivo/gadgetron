@@ -85,7 +85,7 @@ struct NoiseStatistics
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
-size_t compress_zfp_tolerance(float* in, size_t samples, size_t coils, double tolerance, char* buffer, size_t buf_size)
+size_t compress_zfp_tolerance(float* in, size_t samples, double tolerance, char* buffer, size_t buf_size)
 {
     zfp_type type = zfp_type_float;
     zfp_field* field = NULL;
@@ -99,7 +99,7 @@ size_t compress_zfp_tolerance(float* in, size_t samples, size_t coils, double to
     zfp_field_set_pointer(field, in);
 
     zfp_field_set_type(field, type);
-    zfp_field_set_size_2d(field, samples, coils);
+    zfp_field_set_size_2d(field, samples, 4);
     zfp_stream_set_accuracy(zfp, tolerance, type);
 
     if (zfp_stream_maximum_size(zfp, field) > buf_size) {
@@ -1401,35 +1401,38 @@ public:
 
 			//Segmented NHLBI compression buffers
 			std::vector<uint8_t> serialized_buffer;
-			int segments = acq.getHead().active_channels*4;	
-			int segment_size = N/segments;
-			if (N%segments) {
+			int segments = 5;	
+			int segment_size = std::ceil(acq.getHead().number_of_samples*2.0/segments);
+			/*if (N%segments) {
             	throw GadgetronClientException("Invalid segment size");
-        	}
-
+        	}*/
+			float noise_bw_scale_factor_ = (float)std::sqrt(2*acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
 			bool use_rms = false;
-			for(int ch = 0; ch < segments; ch++){
+			for(int ch = 0; ch < acq.getHead().active_channels; ch++){
 
 				//Determine tolerance
-				float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[int(std::floor(ch/4))];
+				float sigma = use_rms ? stat.sigma_rms/std::sqrt(2.) : stat.sigma_diagonal[ch]/std::sqrt(2.);
 				if(sigma == 0){ sigma = 1; stat.status = 1; }
 			    if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
 					//sigma /= std::sqrt(2.0); //noise std
 					sigma *= stat.noise_scaling;
-					sigma_noise = sigma/std::sqrt(2*stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us);
-					//sigma_noise = sigma/std::sqrt(stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us);//not over sampled (i.e. spiral)	
+					sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
+					//sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us);//not over sampled (i.e. spiral)	
 					//std::cout << sigma_noise << std::endl;
 					//std::cout << acq.getHead().sample_time_us << std::endl;
 					//std::cout << stat.noise_dwell_time_us << std::endl;
 			    }
-				float local_tolerance = sigma_noise*std::sqrt(3)*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
-				//std::cout << stat.noise_scaling << std::endl;
-
-		        std::vector<float> input_data((float*)&acq.getDataPtr()[0]+ch*segment_size, (float*)&acq.getDataPtr()[0]+(ch+1)*segment_size);
-		        CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
-				std::vector<uint8_t> serialized = comp_buffer.serialize();
-				if(ch == 0){serialized_buffer = serialized;}
-				else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+				float local_tolerance = sigma*std::sqrt(3./std::pow((1-SNR_Loss),2)-3);
+				//std::cout << stat.noise_sc1-aling << std::endl;
+				for(int s = 0; s < segments; s++){
+					int samples_to_copy = std::min(acq.getHead().number_of_samples*2-s*segment_size, segment_size);
+					std::vector<float> input_data(samples_to_copy, 0.0);
+				    memcpy(&input_data[0], (float*)&acq.getDataPtr()[0]+ch*acq.getHead().number_of_samples*2+s*segment_size, sizeof(float)*samples_to_copy);
+				    CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
+					std::vector<uint8_t> serialized = comp_buffer.serialize();
+					if(ch == 0 && s == 0){serialized_buffer = serialized;}
+					else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+				}
 			}
 	        compressed_bytes_sent_ += serialized_buffer.size();
 	        uncompressed_bytes_sent_ += data_elements*2*sizeof(float);                        
@@ -1531,19 +1534,20 @@ public:
 
 				//Determine tolerance
 				//float sigma = stat.sigma_rms;
-				float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[ch];
+				float sigma = use_rms ? stat.sigma_rms/std::sqrt(2.) : stat.sigma_diagonal[ch]/std::sqrt(2.);
+				//float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[ch];
 				if(sigma == 0){ sigma = 1; stat.status = 1; }
 				if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
 						//sigma /= std::sqrt(2.0); //noise std
 						//std::cout << stat.relative_receiver_noise_bw << std::endl;
 						sigma *= stat.noise_scaling;
-						sigma_noise = sigma/(std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw));
-						//sigma_noise = sigma/std::sqrt(stat.relative_receiver_noise_bw*acq.getHead().sample_time_us/stat.noise_dwell_time_us);//not over sampled (i.e. spiral)
+						//sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us);
+						sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
 				}
-				float local_tolerance = 11.8*sigma_noise*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
+				float local_tolerance = 14.*sigma*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
 				std::cout << local_tolerance << std::endl;
 
-		        size_t comp_buffer_size = 4*sizeof(float)*data_elements;
+		        size_t comp_buffer_size = 4.*sizeof(float)*data_elements;
 		        char* comp_buffer = new char[comp_buffer_size];
 		        size_t compressed_size = 0;
 		        try {
@@ -1587,7 +1591,7 @@ public:
 					//compressed_size = compress_zfp_tolerance(&data[0],acq.getHead().number_of_samples*2, acq.getHead().active_channels,local_tolerance, comp_buffer, comp_buffer_size);*/
 
 		            compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[acq.getHead().number_of_samples*ch],
-		                                                     acq.getHead().number_of_samples/2, 4,
+		                                                     acq.getHead().number_of_samples/2.,
 		                                                     local_tolerance, comp_buffer, comp_buffer_size);
 		            
 		        } catch (...) {
@@ -1853,8 +1857,7 @@ int main(int argc, char **argv)
 
     //TODO:
     // Add check to see if input file exists
-
-    //Let's open the input file
+   //Let's open the input file
     boost::shared_ptr<ISMRMRD::Dataset> ismrmrd_dataset;
     std::string xml_config;
     if (open_input_file) {
@@ -1937,7 +1940,7 @@ int main(int argc, char **argv)
 					std::cout << h.encoding[0].encodedSpace.matrixSize.x << std::endl;
 					std::cout << h.encoding[0].reconSpace.matrixSize.x  << std::endl;
 					//std::cout << h.encoding[0].encodingLimits.kspace_encoding_step_2 << std::endl;
-					if(h.encoding[0].trajectory == "spiral" || h.encoding[0].trajectory == "epi" || h.encoding[0].trajectory == "radial"){
+					if(h.encoding[0].trajectory == "spiral" || h.encoding[0].trajectory == "cartesian" || h.encoding[0].trajectory == "radial"){
 						//noise_stats.sigma_rms *= std::sqrt(2);
 						noise_stats.noise_scaling *= 1;
 						noise_stats.oversampled = false;
@@ -1947,9 +1950,10 @@ int main(int argc, char **argv)
 						noise_stats.oversampled = true;
 						if(h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1 > 1){
 							//noise_stats.noise_scaling  *= std::sqrt(std::sqrt(2.0/std::sqrt(h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1)));
-							//noise_stats.noise_scaling *= std::sqrt(2.);
+							//noise_stats.noise_scaling *= std::sqrt(.8409);//mcr_for_sim_data
 						}
-						else{ noise_stats.noise_scaling /= std::sqrt(2.); }
+						else{ noise_stats.noise_scaling /= std::sqrt(2.*std::sqrt(.793)); }
+							//std::cout << h.encoding[0].trajectory << std::endl;
 					}
                     c.compressionSigmaReference = noise_stats.sigma_rms;
 					c.NoiseScalingFactor = noise_stats.noise_scaling;
@@ -1970,7 +1974,8 @@ int main(int argc, char **argv)
 				if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
 					noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
 				} else {
-					noise_stats.relative_receiver_noise_bw = .794;
+					//noise_stats.relative_receiver_noise_bw = .793;
+					noise_stats.relative_receiver_noise_bw = 1.;
 				}
 				std::cout << h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1 << std::endl;
 				std::cout << h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_2 << std::endl;

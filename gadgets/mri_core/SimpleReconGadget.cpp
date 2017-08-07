@@ -115,11 +115,11 @@ int SimpleReconGadget::process( GadgetContainerMessage<IsmrmrdReconData>* m1)
 
                     //Do the FFTs in place
                     hoNDFFT<float>::instance()->ifft3c(chunk);
-					if(acqhdr.idx.repetition ==0){
+					/*if(acqhdr.idx.repetition ==0){
 						chunk_reps.create(E0,E1,E2,CHA);
 						memcpy(chunk_reps.get_data_ptr()+acqhdr.idx.repetition*E0*E1*E2*CHA, chunk.get_data_ptr(), E0*E1*E2*CHA*sizeof(std::complex<float>));
-						write_nd_array<std::complex<float>>(&chunk_reps, "channel_images.cplx");
-					}
+						//write_nd_array<std::complex<float>>(&chunk_reps, "channel_images.cplx");
+					}*/
 
                     //Square root of the sum of squares
                     //Each image will be [E0,E1,E2,1] big
@@ -140,16 +140,16 @@ int SimpleReconGadget::process( GadgetContainerMessage<IsmrmrdReconData>* m1)
 
 					for( int i = 0; i < output.get_number_of_elements(); i++ ){
 						output[i] = std::abs(output[i]);   
-					}     
-					write_nd_array<std::complex<float>>(&coil_map, "coil_maps.cplx");
-               /*     //Compute d* d in place
-                    multiplyConj(chunk,chunk,chunk);                    
+					}    
+					//write_nd_array<std::complex<float>>(&coil_map, "coil_maps.cplx");
+                    //Compute d* d in place
+                   /* multiplyConj(chunk,chunk,chunk);                    
                     //Add up
                     for (size_t c = 0; c < CHA; c++) {
                         output += hoNDArray<std::complex<float> >(img_dims, &chunk(0,0,c));
                     }                    
                     //Take the square root in place
-                    sqrt_inplace(&output); */
+                    sqrt_inplace(&output);*/
                }
             }
         }
