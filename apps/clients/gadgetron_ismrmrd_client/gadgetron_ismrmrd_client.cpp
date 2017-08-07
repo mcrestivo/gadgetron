@@ -1400,17 +1400,17 @@ public:
 
 			//Segmented NHLBI compression buffers
 			std::vector<uint8_t> serialized_buffer;
-			int segments = acq.getHead().active_channels*4;	
-			int segment_size = N/segments;
-			if (N%segments) {
+			int segments = 5;	
+			int segment_size = std::ceil(acq.getHead().number_of_samples*2.0/segments);
+			/*if (N%segments) {
             	throw GadgetronClientException("Invalid segment size");
-        	}
+        	}*/
 
 			bool use_rms = false;
-			for(int ch = 0; ch < segments; ch++){
+			for(int ch = 0; ch < acq.getHead().active_channels; ch++){
 
 				//Determine tolerance
-				float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[int(std::floor(ch/4))];
+				float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[ch];
 				if(sigma == 0){ sigma = 1; stat.status = 1; }
 			    if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
 					//sigma /= std::sqrt(2.0); //noise std
@@ -1423,12 +1423,15 @@ public:
 			    }
 				float local_tolerance = sigma_noise*std::sqrt(3)*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
 				//std::cout << stat.noise_scaling << std::endl;
-
-		        std::vector<float> input_data((float*)&acq.getDataPtr()[0]+ch*segment_size, (float*)&acq.getDataPtr()[0]+(ch+1)*segment_size);
-		        CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
-				std::vector<uint8_t> serialized = comp_buffer.serialize();
-				if(ch == 0){serialized_buffer = serialized;}
-				else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+				for(int s = 0; s < segments; s++){
+					int samples_to_copy = std::min(acq.getHead().number_of_samples*2-s*segment_size, segment_size);
+					std::vector<float> input_data(samples_to_copy, 0.0);
+				    memcpy(&input_data[0], (float*)&acq.getDataPtr()[0]+ch*acq.getHead().number_of_samples*2+s*segment_size, sizeof(float)*samples_to_copy);
+				    CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
+					std::vector<uint8_t> serialized = comp_buffer.serialize();
+					if(ch == 0 && s == 0){serialized_buffer = serialized;}
+					else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
+				}
 			}
 	        compressed_bytes_sent_ += serialized_buffer.size();
 	        uncompressed_bytes_sent_ += data_elements*2*sizeof(float);                        
