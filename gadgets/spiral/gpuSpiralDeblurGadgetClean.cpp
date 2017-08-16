@@ -403,30 +403,32 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		cuNDArray<complext<float>> deref_csm = *csm_;	
 		csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 		host_image = *(reg_image.to_host());
-		/*nfft_plan_.fft(&reg_image, plan_type::NFFT_FORWARDS);
-		auto gridded_data_0 = *(reg_image.to_host());
-		nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
+		nfft_plan_.fft(&image, plan_type::NFFT_FORWARDS);
+		auto gridded_data_0 = *(image.to_host());
+		nfft_plan_.fft(&image, plan_type::NFFT_BACKWARDS);
 
 
 		if( phase_mask.get_number_of_elements() == 0 ) {
-			phase_mask.create(host_image.get_dimensions());
+			phase_mask.create(gridded_data_0.get_dimensions());
 			phase_mask.fill(0.0f);
-			float f_step = fmax*2./(L-1);
-			std::complex<float> omega = std::complex<float>(0.0,2.*M_PI*f_step*sample_time);
+			float f_step = fmax/((L-1)/2);
+			std::complex<float> omega = std::complex<float>(sample_time,0.0);
 			std::cout << omega << std::endl;
 			#ifdef USE_OMP
 			#pragma omp parallel for
 			#endif
 			for(int r = 0; r < R0*E1*CHA; r++) {
-				host_data[r] *= std::exp(omega*float(r%R0));
+				host_data[r] = omega*float(r%R0);
 			}
+			std::cout << sample_time*R0 << std::endl;
 			gpu_data = *((hoNDArray<float_complext>*)&host_data);
 			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
-			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
-			nfft_plan_.fft(&reg_image, plan_type::NFFT_FORWARDS);
-			auto gridded_data_1 = *(reg_image.to_host());
+			//csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
+			nfft_plan_.fft(&image, plan_type::NFFT_FORWARDS);
+			//sum(&image,2);
+			auto gridded_data_1 = *(image.to_host());
 			for (int i = 0; i < gridded_data_1.get_number_of_elements(); i++) {
-				phase_mask[i] = gridded_data_1[i]/gridded_data_0[i];
+				phase_mask[i] = exp(_complext(0.0,1.0)*2*M_PI*f_step*gridded_data_1[i]/_complext(std::sqrt(gridded_data_1.get_size(0)),0.0));
 			}
 		}		
 
@@ -435,34 +437,35 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#pragma omp parallel for
 			#endif
 			for (int i = 0; i < gridded_data_0.get_number_of_elements(); i++) {
-				gridded_data_0[i] *= exp(_complext(0.0,-1.0)*arg(phase_mask[i]));
+				gridded_data_0[i] *= conj(phase_mask[i]);
 			}
-		}*/
+		}
 		
 		output_image.fill(0.0f);	
 		hoNDArray<_complext> temp_image(host_image.get_dimensions());
 		int i;
 		int j;
 		for(j = 0; j<L; j++){
-			/*//Update output image
+			//Update output image
 			int mfc_index;
 			if(j != 0){
 				#ifdef USE_OMP
 				#pragma omp parallel for
 				#endif
 				for (i = 0; i < gridded_data_0.get_number_of_elements(); i++) {
-					gridded_data_0[i] *= exp(_complext(0.0,1.0)*arg(phase_mask[i]));
+					gridded_data_0[i] *= phase_mask[i];
 				}
 			}
-			reg_image = gridded_data_0;
-			nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
+			image = gridded_data_0;
+			nfft_plan_.fft(&image, plan_type::NFFT_BACKWARDS);
+			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			temp_image = *(reg_image.to_host());
 			if(j == 5){
 				//write_nd_array<_complext>( &temp_image, "temp5.cplx" );
-				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
-			}*/
+				//write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
+			}
 
-			int mfc_index;
+			/*int mfc_index;
 			float f_step = -fmax+j*fmax*2./(L-1);
 			std::complex<float> omega = std::complex<float>(0.0,2.*M_PI*f_step*sample_time);
 			std::cout << omega << std::endl;
