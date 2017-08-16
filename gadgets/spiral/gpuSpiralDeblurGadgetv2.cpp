@@ -252,7 +252,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 	//Check user_int[0], 1 & 2 = map acquisition, 0 = image data
 	int flag = m1->getObjectPtr()->user_int[0];
 	if(flag > 0){
-		Nints = 1; //map is always single shot, variable nints_ is defined for image data
+		Nints = Nints_; //map is always single shot, variable nints_ is defined for image data
 		interleaves_ = static_cast<int>(Nints);
 		if(flag_old == 0){ prepared_ = false;} //If the flag changes, then the NFFT needs to be re-prepared
 		flag_old = flag;
@@ -278,7 +278,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		//Initialize traj and weight parameters if it is the first interleave or a map acquisiton & allocate data buffer
 		if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0 || flag > 0){
 			
-			traj_attached = 0; //1 = use attached trajectory, 0 = calc trajectory using calc_vds
+			traj_attached = 1; //1 = use attached trajectory, 0 = calc trajectory using calc_vds
 			sample_time = (1.0*Tsamp_ns_) * 1e-9;
 			samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;
 

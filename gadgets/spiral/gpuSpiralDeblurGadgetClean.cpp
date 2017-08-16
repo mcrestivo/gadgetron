@@ -164,6 +164,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
       (((static_cast<unsigned int>(std::ceil(image_dimensions_recon_[0]*oversampling_factor_))+warp_size-1)/warp_size)*warp_size,
        ((static_cast<unsigned int>(std::ceil(image_dimensions_recon_[1]*oversampling_factor_))+warp_size-1)/warp_size)*warp_size);
 
+	deblur_ = do_deblurring.value();
+
 	return GADGET_OK;
   }
 
@@ -319,9 +321,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#ifdef USE_OMP
 			#pragma omp parallel for 
 			#endif
+
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				//recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
-				//recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/100.,2.) );
+				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2.),2.) );
+				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2.),2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -400,7 +403,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		cuNDArray<complext<float>> deref_csm = *csm_;	
 		csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 		host_image = *(reg_image.to_host());
-		nfft_plan_.fft(&reg_image, plan_type::NFFT_FORWARDS);
+		/*nfft_plan_.fft(&reg_image, plan_type::NFFT_FORWARDS);
 		auto gridded_data_0 = *(reg_image.to_host());
 		nfft_plan_.fft(&reg_image, plan_type::NFFT_BACKWARDS);
 
@@ -409,7 +412,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			phase_mask.create(host_image.get_dimensions());
 			phase_mask.fill(0.0f);
 			float f_step = fmax*2./(L-1);
-			std::complex<float> omega = std::complex<float>(0,2*M_PI*f_step*sample_time);
+			std::complex<float> omega = std::complex<float>(0.0,2.*M_PI*f_step*sample_time);
 			std::cout << omega << std::endl;
 			#ifdef USE_OMP
 			#pragma omp parallel for
@@ -432,23 +435,23 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			#pragma omp parallel for
 			#endif
 			for (int i = 0; i < gridded_data_0.get_number_of_elements(); i++) {
-				gridded_data_0[i] *= exp(_complext(0,-1)*arg(phase_mask[i]));
+				gridded_data_0[i] *= exp(_complext(0.0,-1.0)*arg(phase_mask[i]));
 			}
-		}
+		}*/
 		
 		output_image.fill(0.0f);	
 		hoNDArray<_complext> temp_image(host_image.get_dimensions());
 		int i;
 		int j;
 		for(j = 0; j<L; j++){
-			//Update output image
+			/*//Update output image
 			int mfc_index;
 			if(j != 0){
 				#ifdef USE_OMP
 				#pragma omp parallel for
 				#endif
 				for (i = 0; i < gridded_data_0.get_number_of_elements(); i++) {
-					gridded_data_0[i] *= exp(_complext(0,1)*arg(phase_mask[i]));
+					gridded_data_0[i] *= exp(_complext(0.0,1.0)*arg(phase_mask[i]));
 				}
 			}
 			reg_image = gridded_data_0;
@@ -456,11 +459,27 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			temp_image = *(reg_image.to_host());
 			if(j == 5){
 				//write_nd_array<_complext>( &temp_image, "temp5.cplx" );
-				//write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
-			}
+				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
+			}*/
+
+			int mfc_index;
+			float f_step = -fmax+j*fmax*2./(L-1);
+			std::complex<float> omega = std::complex<float>(0.0,2.*M_PI*f_step*sample_time);
+			std::cout << omega << std::endl;
+			host_data = recon_bit_->rbit_[0].data_.data_;
 			#ifdef USE_OMP
-			#pragma omp parallel for private(i,mfc_index)
+			#pragma omp parallel for
 			#endif
+			for(int r = 0; r < R0*E1*CHA; r++) {
+				host_data[r] *= std::exp(omega*float(r%R0));
+			}
+			gpu_data = *((hoNDArray<float_complext>*)&host_data);
+			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
+			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
+			temp_image = *(reg_image.to_host());
+			/*#ifdef USE_OMP
+			#pragma omp parallel for private(i,mfc_index)
+			#endif*/
 			for (i = 0; i < temp_image.get_number_of_elements(); i++) {
 				mfc_index = int(B0_map[i]+fmax)*L+j;
 				output_image[i] += (MFI_C[mfc_index]*temp_image[i]);
@@ -506,16 +525,107 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		GadgetContainerMessage< hoNDArray< std::complex<float> > >* cm2 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
 		cm2->getObjectPtr()->create(host_image.get_dimensions());
-		bool deblur = true;
-		if(!deblur){
+		if(!deblur_){
+			//memcpy(cm2->getObjectPtr()->get_data_ptr(), host_image.get_data_ptr(), host_image.get_number_of_elements()*sizeof(std::complex<float>));
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), host_image.get_data_ptr(), host_image.get_number_of_elements()*sizeof(std::complex<float>));
 		}
-		if(deblur){
+		if(deblur_){
 			memcpy(cm2->getObjectPtr()->get_data_ptr(), output_image.get_data_ptr(), output_image.get_number_of_elements()*sizeof(std::complex<float>));
 		}
 		header->cont(cm2);
 
 		if (this->next()->putq(header) < 0) {
+		  GDEBUG("Failed to put job on queue.\n");
+		  header->release();
+		  return GADGET_FAIL;
+		}
+
+		GadgetContainerMessage<ISMRMRD::ImageHeader> *header2 = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
+		{
+		ISMRMRD::ImageHeader tmp;
+		*(header2->getObjectPtr()) = tmp;
+		  }
+
+		header2->getObjectPtr()->version = curr_header.version;
+
+		header2->getObjectPtr()->matrix_size[0] = image_dimensions_recon_[0];
+		header2->getObjectPtr()->matrix_size[1] = image_dimensions_recon_[1];
+		header2->getObjectPtr()->matrix_size[2] = 1;
+
+		header2->getObjectPtr()->field_of_view[0] = fov_vec_[0];
+		header2->getObjectPtr()->field_of_view[1] = fov_vec_[1];
+		header2->getObjectPtr()->field_of_view[2] = fov_vec_[2];
+		header2->getObjectPtr()->channels = 1;//base_head->active_channels;
+
+		header2->getObjectPtr()->slice = curr_header.idx.slice;
+		header2->getObjectPtr()->set = curr_header.idx.set;
+
+		header2->getObjectPtr()->acquisition_time_stamp = curr_header.acquisition_time_stamp;
+		memcpy(header2->getObjectPtr()->physiology_time_stamp, curr_header.physiology_time_stamp, sizeof(uint32_t)*ISMRMRD::ISMRMRD_PHYS_STAMPS);
+
+		memcpy(header2->getObjectPtr()->position, curr_header.position, sizeof(float)*3);
+		memcpy(header2->getObjectPtr()->read_dir, curr_header.read_dir, sizeof(float)*3);
+		memcpy(header2->getObjectPtr()->phase_dir, curr_header.phase_dir, sizeof(float)*3);
+		memcpy(header2->getObjectPtr()->slice_dir, curr_header.slice_dir, sizeof(float)*3);
+		memcpy(header2->getObjectPtr()->patient_table_position, curr_header.patient_table_position, sizeof(float)*3);
+		header2->getObjectPtr()->data_type = ISMRMRD::ISMRMRD_CXFLOAT;
+		//header->getObjectPtr()->image_index = image_counter_[0]++; 
+		header2->getObjectPtr()->image_series_index = 10;
+		
+		GadgetContainerMessage<hoNDArray< std::complex<float> > >* cm3 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
+		cm3->getObjectPtr()->create(host_image.get_dimensions());
+		memcpy(cm3->getObjectPtr()->get_data_ptr(), host_image.get_data_ptr(), host_image.get_number_of_elements()*sizeof(std::complex<float>));
+		header2->cont(cm3);
+
+		if (this->next()->putq(header2) < 0) {
+		  GDEBUG("Failed to put job on queue.\n");
+		  header->release();
+		  return GADGET_FAIL;
+		}
+
+		GadgetContainerMessage<ISMRMRD::ImageHeader> *header3 = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
+		{
+		ISMRMRD::ImageHeader tmp;
+		*(header3->getObjectPtr()) = tmp;
+		  }
+
+		header3->getObjectPtr()->version = curr_header.version;
+
+		header3->getObjectPtr()->matrix_size[0] = image_dimensions_recon_[0];
+		header3->getObjectPtr()->matrix_size[1] = image_dimensions_recon_[1];
+		header3->getObjectPtr()->matrix_size[2] = 1;
+
+		header3->getObjectPtr()->field_of_view[0] = fov_vec_[0];
+		header3->getObjectPtr()->field_of_view[1] = fov_vec_[1];
+		header3->getObjectPtr()->field_of_view[2] = fov_vec_[2];
+		header3->getObjectPtr()->channels = 1;//base_head->active_channels;
+
+		header3->getObjectPtr()->slice = curr_header.idx.slice;
+		header3->getObjectPtr()->set = curr_header.idx.set;
+
+		header3->getObjectPtr()->acquisition_time_stamp = curr_header.acquisition_time_stamp;
+		memcpy(header3->getObjectPtr()->physiology_time_stamp, curr_header.physiology_time_stamp, sizeof(uint32_t)*ISMRMRD::ISMRMRD_PHYS_STAMPS);
+
+		memcpy(header3->getObjectPtr()->position, curr_header.position, sizeof(float)*3);
+		memcpy(header3->getObjectPtr()->read_dir, curr_header.read_dir, sizeof(float)*3);
+		memcpy(header3->getObjectPtr()->phase_dir, curr_header.phase_dir, sizeof(float)*3);
+		memcpy(header3->getObjectPtr()->slice_dir, curr_header.slice_dir, sizeof(float)*3);
+		memcpy(header3->getObjectPtr()->patient_table_position, curr_header.patient_table_position, sizeof(float)*3);
+		header3->getObjectPtr()->data_type = ISMRMRD::ISMRMRD_CXFLOAT;
+		//header->getObjectPtr()->image_index = image_counter_[0]++; 
+		header3->getObjectPtr()->image_series_index = 20;
+		
+		GadgetContainerMessage<hoNDArray< std::complex<float> > >* cm4 = new GadgetContainerMessage<hoNDArray< std::complex<float> > >();
+		hoNDArray< std::complex<float> >B0_image;
+		B0_image.create(B0_map.get_dimensions());
+		for(int i = 0; i<B0_map.get_number_of_elements(); i++){
+			B0_image[i] = std::complex<float>(B0_map[i],0.0);
+		}
+		cm4->getObjectPtr()->create(B0_image.get_dimensions());
+		memcpy(cm4->getObjectPtr()->get_data_ptr(), B0_image.get_data_ptr(), B0_image.get_number_of_elements()*sizeof(std::complex<float>));
+		header3->cont(cm4);
+
+		if (this->next()->putq(header3) < 0) {
 		  GDEBUG("Failed to put job on queue.\n");
 		  header->release();
 		  return GADGET_FAIL;

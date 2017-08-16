@@ -431,7 +431,7 @@ namespace Gadgetron{
                 NE1 = *stats.kspace_encode_step_1.rbegin() - *stats.kspace_encode_step_1.begin() + 1;
             }
 			if(acqhdr.user_int[0] > 0){
-				NE1 = 1;
+				//NE1 = 1;
 			}
         }
 
