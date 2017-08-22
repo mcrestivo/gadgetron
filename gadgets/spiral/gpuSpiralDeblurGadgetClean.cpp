@@ -184,7 +184,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[0].data_.data_;
 		ISMRMRD::AcquisitionHeader& curr_header = recon_bit_->rbit_[0].data_.headers_(0,0,0,0,0);
-
+				std::cout << "next" << std::endl;
 		if(!prepared_){
 		    size_t R0 = host_data.get_size(0);
 		    size_t E1 = host_data.get_size(1);
@@ -318,13 +318,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		if(recon_bit_->rbit_.size() > 1){
 			size_t R0 = recon_bit_->rbit_[1].data_.data_.get_size(0);
-			#ifdef USE_OMP
-			#pragma omp parallel for 
-			#endif
-
+			//#ifdef USE_OMP
+			//#pragma omp parallel for 
+			//#endif
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2.),2.) );
-				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2.),2.) );
+				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
+				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -414,9 +413,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			float f_step = fmax/((L-1)/2);
 			std::complex<float> omega = std::complex<float>(sample_time,0.0);
 			std::cout << omega << std::endl;
-			#ifdef USE_OMP
-			#pragma omp parallel for
-			#endif
+			//#ifdef USE_OMP
+			//#pragma omp parallel for
+			//#endif
 			for(int r = 0; r < R0*E1*CHA; r++) {
 				host_data[r] = omega*float(r%R0);
 			}
@@ -446,6 +445,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		int i;
 		int j;
 		for(j = 0; j<L; j++){
+			std::cout << j << std::endl;
 			//Update output image
 			int mfc_index;
 			if(j != 0){
@@ -479,17 +479,17 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			gpu_data = *((hoNDArray<float_complext>*)&host_data);
 			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
-			temp_image = *(reg_image.to_host());
-			/*#ifdef USE_OMP
+			temp_image = *(reg_image.to_host());*/
+			#ifdef USE_OMP
 			#pragma omp parallel for private(i,mfc_index)
-			#endif*/
+			#endif
 			for (i = 0; i < temp_image.get_number_of_elements(); i++) {
 				mfc_index = int(B0_map[i]+fmax)*L+j;
 				output_image[i] += (MFI_C[mfc_index]*temp_image[i]);
 			}
 		}
 
-
+		std::cout << "finshes" << std::endl;
 		// Prepare an image header for this frame
 		GadgetContainerMessage<ISMRMRD::ImageHeader> *header = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
 
