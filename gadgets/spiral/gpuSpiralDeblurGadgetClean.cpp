@@ -1,6 +1,7 @@
 #include "gpuSpiralDeblurGadgetClean.h"
 #include "GenericReconJob.h"
 #include "cuNDArray_utils.h"
+#include "hoNDArray_utils.h"
 #include "cuNDArray_elemwise.h"
 #include "cuNDArray_reductions.h"
 #include "vector_td_utilities.h"
@@ -183,9 +184,26 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		}
 
 		hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[0].data_.data_;
+		std::vector<size_t> data_dims(7,0);
+		for(int d =0; d < 6; d++){
+			data_dims[d] = host_data.get_size(d);
+		}
+		bool bit_reversed_order = false;
+		if(bit_reversed_order){
+			hoNDArray<std::complex<float>> host_data2 = host_data;
+			std::vector<size_t> new_order = {0,4,2,6,1,5,3,7};
+			for(int lin = 0; lin < host_data.get_size(1); lin++){
+				for(int ch = 0; ch <host_data.get_size(3); ch++){
+					std::cout << lin<< std::endl;
+					std::cout << ch <<std::endl;
+					memcpy(&host_data(0,new_order[lin],0,ch,0,0,0),&host_data2(0,lin,0,ch,0,0,0),sizeof(std::complex<float>)*host_data.get_size(0));
+				}
+			}
+		}
+		//host_data = host_data2;
 		ISMRMRD::AcquisitionHeader& curr_header = recon_bit_->rbit_[0].data_.headers_(0,0,0,0,0);
 				std::cout << "next" << std::endl;
-		if(!prepared_){
+		if(!prepared_ && host_data.get_size(0) > 0){
 		    size_t R0 = host_data.get_size(0);
 		    size_t E1 = host_data.get_size(1);
 		    size_t E2 = host_data.get_size(2);
@@ -268,8 +286,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			float krmaxB0_ = 2.*(B0_header.user_float[4])/10000.; //Hack #mcr
 			if (false) {
 				//Setup calc_vds parameters
-				int     nfov   = 1;
-				int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
+				const int     nfov   = 2;
+				int     ngmax  =1e7;       /*  maximum number of gradient samples      */
 				double  *xgrad;             /*  x-component of gradient.                */
 				double  *ygrad;             /*  y-component of gradient.                */
 				double  *x_trajectory;
@@ -282,8 +300,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				std::cout << "gmax " << B0_header.user_float[1]/10. << std::endl;
 				std::cout << "krmax " << 2*((B0_header.user_float[4])/10000.) << std::endl;
 				std::cout << "sampling_time " << sample_time << std::endl;
-				double fov2_ = (B0_header.user_float[5]);
-				calc_vds(3.*((B0_header.user_float[3])/10.),(B0_header.user_float[1])/10.,sample_time,sample_time,E1,&fov2_,nfov,2.*((B0_header.user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
+				double fov2_[nfov] = {B0_header.user_float[5], -1/(1.1*2*((B0_header.user_float[4])/10000.))*B0_header.user_float[5]};
+				calc_vds(3.*((B0_header.user_float[3])/10.),(B0_header.user_float[1])/10.,sample_time,sample_time,E1,&fov2_[0],nfov,2.*((B0_header.user_float[4])/10000.),ngmax,&xgrad,&ygrad,&ngrad);
 				calc_traj(xgrad, ygrad, R0, E1, sample_time, krmaxB0_, &x_trajectory, &y_trajectory, &weighting);
 
 				for (int i = 0; i < (R0*E1); i++) {
@@ -339,13 +357,16 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
 				//std::cout << B0_map[i] << std::endl;
 			}
-			write_nd_array<complext<float>>( &B0_temp_0, "B0_image1.cplx" );
-			write_nd_array<complext<float>>( &B0_temp_1, "B0_image2.cplx" );
+			//write_nd_array<complext<float>>( &B0_temp_0, "B0_image1.cplx" );
+			//write_nd_array<complext<float>>( &B0_temp_1, "B0_image2.cplx" );
 		}
 		
 		size_t R0 = host_data.get_size(0);
 		size_t E1 = host_data.get_size(1);
 		size_t CHA = host_data.get_size(3);
+		
+		if(R0 > 0){
+			
 
 		//Deblur using Multi-frequency Interpolation
 		int fmax = (1/(2*.001))*1.2; 
@@ -582,10 +603,11 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		if (this->next()->putq(header2) < 0) {
 		  GDEBUG("Failed to put job on queue.\n");
-		  header->release();
+		  header2->release();
 		  return GADGET_FAIL;
 		}
 
+		}
 		GadgetContainerMessage<ISMRMRD::ImageHeader> *header3 = new GadgetContainerMessage<ISMRMRD::ImageHeader>();
 		{
 		ISMRMRD::ImageHeader tmp;
@@ -630,7 +652,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 
 		if (this->next()->putq(header3) < 0) {
 		  GDEBUG("Failed to put job on queue.\n");
-		  header->release();
+		  header3->release();
 		  return GADGET_FAIL;
 		}
 
