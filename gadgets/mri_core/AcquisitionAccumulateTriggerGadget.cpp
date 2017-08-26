@@ -189,7 +189,7 @@ namespace Gadgetron{
     
     //Create the data structure that will go in the bucket
     IsmrmrdAcquisitionData d(m1,m2,AsContainerMessage< hoNDArray<float> >(m2->cont()));
-
+if(d.head_->getObjectPtr()->idx.repetition%2==1){d.head_->getObjectPtr()->idx.repetition -= 1;}
     //Now let's figure out if a trigger condition has occurred.
     if (prev_.head_) { //Make sure this is not the first acquisition we are receiving
 	if(d.head_->getObjectPtr()->idx.repetition < prev_.head_->getObjectPtr()->idx.repetition && prev_.head_->getObjectPtr()->user_int[0] == 0){d.head_->getObjectPtr()->idx.repetition = prev_.head_->getObjectPtr()->idx.repetition+1;} //hack #mcr
@@ -336,7 +336,12 @@ namespace Gadgetron{
         bucket->datastats_[espace].set.insert(m1->getObjectPtr()->idx.set);
         bucket->datastats_[espace].segment.insert(m1->getObjectPtr()->idx.segment);
         bucket->datastats_[espace].average.insert(m1->getObjectPtr()->idx.average);
-        bucket->datastats_[espace].repetition.insert(m1->getObjectPtr()->idx.repetition);
+		if(m1->getObjectPtr()->idx.repetition%2==1){
+        	bucket->datastats_[espace].repetition.insert(m1->getObjectPtr()->idx.repetition-1);
+		}
+		else{
+			bucket->datastats_[espace].repetition.insert(m1->getObjectPtr()->idx.repetition);
+		}
       }
 
     if ( ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_PARALLEL_CALIBRATION).isSet(m1->getObjectPtr()->flags) ||
