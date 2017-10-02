@@ -189,7 +189,7 @@ namespace Gadgetron{
     
     //Create the data structure that will go in the bucket
     IsmrmrdAcquisitionData d(m1,m2,AsContainerMessage< hoNDArray<float> >(m2->cont()));
-if(d.head_->getObjectPtr()->idx.repetition%2==1){d.head_->getObjectPtr()->idx.repetition -= 1;}
+//if(d.head_->getObjectPtr()->idx.repetition%2==1){d.head_->getObjectPtr()->idx.repetition -= 1;}
     //Now let's figure out if a trigger condition has occurred.
     if (prev_.head_) { //Make sure this is not the first acquisition we are receiving
 	if(d.head_->getObjectPtr()->idx.repetition < prev_.head_->getObjectPtr()->idx.repetition && prev_.head_->getObjectPtr()->user_int[0] == 0){d.head_->getObjectPtr()->idx.repetition = prev_.head_->getObjectPtr()->idx.repetition+1;} //hack #mcr

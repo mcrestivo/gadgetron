@@ -182,10 +182,30 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			image_counter_[0] = 0;
 		}
 
-		hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[0].data_.data_;
-		int map_only = 1;
+		//hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[0].data_.data_;
+		int map_only = 0;
+		hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[map_only].data_.data_;
 		ISMRMRD::AcquisitionHeader& curr_header = recon_bit_->rbit_[map_only].data_.headers_(0,0,0,0,0);
 				//std::cout << "next" << std::endl;
+				
+		bool bit_reversed_order = false;
+		if(bit_reversed_order){
+			std::vector<size_t> data_dims(7,0);
+			for(int d =0; d < 6; d++){
+				data_dims[d] = host_data.get_size(d);
+			}
+			hoNDArray<std::complex<float>> host_data2 = host_data;
+			std::vector<size_t> new_order = {0,4,2,6,1,5,3,7};
+			for(int lin = 0; lin < host_data.get_size(1); lin++){
+				for(int ch = 0; ch <host_data.get_size(3); ch++){
+					//std::cout << lin<< std::endl;
+					//std::cout << ch <<std::endl;
+					memcpy(&host_data(0,new_order[lin],0,ch,0,0,0),&host_data2(0,lin,0,ch,0,0,0),sizeof(std::complex<float>)*host_data.get_size(0));
+				}
+			}
+		}
+				
+				
 		if(!prepared_){
 		    size_t R0 = host_data.get_size(0);
 		    size_t E1 = host_data.get_size(1);
@@ -242,7 +262,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 					delete [] weighting;
 				}
 				else{
-					hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
+					hoNDArray<float> trajectory = *(recon_bit_->rbit_[map_only].data_.trajectory_);
 					for (int i = 0; i < (R0*E1); i++) {
 						host_traj[i]   = floatd2(trajectory[i*3],trajectory[i*3+1]);
 						host_weights[i] = trajectory[i*3+2];
@@ -318,15 +338,15 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			nfft_plan_B0_.preprocess(&gpu_traj, cuNFFT_plan<float,2>::NFFT_PREP_NC2C);
 			prepared_B0_= true;
 		}
-
+		
 		if(recon_bit_->rbit_.size() > 1){
 			size_t R0 = recon_bit_->rbit_[1].data_.data_.get_size(0);
 			//#ifdef USE_OMP
 			//#pragma omp parallel for 
 			//#endif
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
-				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
+				//recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
+				//recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -348,10 +368,13 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				else{B0_map[i] = 0;}
 				//std::cout << B0_map[i] << std::endl;
 			}
-			//write_nd_array<complext<float>>( &B0_temp_0, "B0_image1.cplx" );
+			//if(image_counter_[0] == 24){ write_nd_array<_real>( &B0_map, "B0_map_inhale.real" );}
+			//if(image_counter_[0] == 80){ write_nd_array<_real>( &B0_map, "B0_map_exhale.real" );}
 			//write_nd_array<complext<float>>( &B0_temp_1, "B0_image2.cplx" );
 		}
 		
+		B0_map = *read_nd_array<_real>("B0_map_exhale.real");
+		//host_data = recon_bit_->rbit_[map_only].data_.data_;
 		size_t R0 = host_data.get_size(0);
 		size_t E1 = host_data.get_size(1);
 		size_t CHA = host_data.get_size(3);
@@ -457,7 +480,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		for(j = 0; j<L; j++){
 			//std::cout << j << std::endl;
 			//Update output image
-			int mfc_index;
+			/*int mfc_index;
 			if(j != 0){
 				#ifdef USE_OMP
 				#pragma omp parallel for
@@ -471,15 +494,15 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			temp_image = *(reg_image.to_host());
 			if(j == 5){
-				write_nd_array<_complext>( &temp_image, "temp5.cplx" );
+				//write_nd_array<_complext>( &temp_image, "temp5.cplx" );
 				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
-			}
+			}*/
 
-			/*int mfc_index;
+			int mfc_index;
 			float f_step = -fmax+j*fmax*2./(L-1);
 			std::complex<float> omega = std::complex<float>(0.0,2.*M_PI*f_step*sample_time);
 			std::cout << omega << std::endl;
-			host_data = recon_bit_->rbit_[0].data_.data_;
+			host_data = recon_bit_->rbit_[map_only].data_.data_;
 			#ifdef USE_OMP
 			#pragma omp parallel for
 			#endif
@@ -489,10 +512,10 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			gpu_data = *((hoNDArray<float_complext>*)&host_data);
 			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
-			temp_image = *(reg_image.to_host());*/
-			#ifdef USE_OMP
+			temp_image = *(reg_image.to_host());
+			/*#ifdef USE_OMP
 			#pragma omp parallel for private(i,mfc_index)
-			#endif
+			#endif*/
 			for (i = 0; i < temp_image.get_number_of_elements(); i++) {
 				mfc_index = int(B0_map[i]+fmax)*L+j;
 				output_image[i] += (MFI_C[mfc_index]*temp_image[i]);
