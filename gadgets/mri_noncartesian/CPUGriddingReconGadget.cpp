@@ -1,10 +1,12 @@
 #include "CPUGriddingReconGadget.h"
 #include "mri_core_grappa.h"
+#include "mri_core_coil_map_estimation.h"
 #include "vector_td_utilities.h"
 #include <boost/shared_ptr.hpp>
 #include <boost/make_shared.hpp>
 #include "hoNFFT.h"
 #include "hoNDArray.h"
+#include "hoNDArray_fileio.h"
 #include "hoNDArray_elemwise.h"
 #include "hoNDArray_math.h"
 #include "hoCgSolver.h"
@@ -60,12 +62,12 @@ namespace Gadgetron{
 				boost::make_shared<hoNDArray<floatd2>>(std::get<0>(trajDcw).get());
 			
 			std::vector<size_t> newOrder = {0, 1, 2, 4, 5, 6, 3};
-			auto permuted = permute((hoNDArray<float_complext>*)&buffer->data_,&newOrder);
-			hoNDArray<float_complext> data(*permuted);
+			auto permuted = permute((hoNDArray<std::complex<float>>*)&buffer->data_,&newOrder);
+			hoNDArray<std::complex<float>> data(*permuted);
 
 			auto image = reconstruct(&data, traj.get(), dcw.get(), CHA);
 			auto img = *image;
-			hoNDArray<float_complext> finalImage; finalImage.create(imageDims[0], imageDims[1]);
+			hoNDArray<std::complex<float>> finalImage; finalImage.create(imageDims[0], imageDims[1]);
 			
 			// Crop the image
 			size_t halfImageDims = (imageDimsOs[0]-imageDims[0])/2;
@@ -84,42 +86,183 @@ namespace Gadgetron{
 		return GADGET_OK;
 	}
 
-	boost::shared_ptr<hoNDArray<float_complext>> CPUGriddingReconGadget::reconstruct(
-		hoNDArray<float_complext> *data,
+	boost::shared_ptr<hoNDArray<std::complex<float>>> CPUGriddingReconGadget::reconstruct(
+		hoNDArray<std::complex<float>> *data,
 		hoNDArray<floatd2> *traj,
 		hoNDArray<float> *dcw,
 		size_t nCoils
 	){
-		hoNDArray<float_complext> arg;
-		arg.create(imageDimsOs[0], imageDimsOs[0]);
-		for(unsigned int i = 0; i < nCoils; ++i){
-			hoNDArray<float_complext> channelData(data->get_number_of_elements()/nCoils);
-			std::copy(data->begin()+i*(data->get_number_of_elements()/nCoils), data->begin()+(i+1)*(data->get_number_of_elements()/nCoils), channelData.begin());
-			
-			hoNDArray<float_complext> channelRecon = *reconstructChannel(&channelData, traj, dcw);
-			multiplyConj(channelRecon, channelRecon, channelRecon);
-			add(arg, channelRecon, arg);	
-		}
-		sqrt_inplace(&arg);
-		return boost::make_shared<hoNDArray<float_complext>>(arg);
-	}	
-
-	boost::shared_ptr<hoNDArray<float_complext>> CPUGriddingReconGadget::reconstructChannel(
-		hoNDArray<float_complext> *data,
-		hoNDArray<floatd2> *traj,
-		hoNDArray<float> *dcw
-	){	
-		if(!iterateProperty.value()){
+		std::vector<hoNFFT_plan<float, 2>> plans_;
+		for(int p = 0; p < nCoils; p++){
 			hoNFFT_plan<float, 2> plan(
 				from_std_vector<size_t, 2>(imageDims),
 				oversamplingFactor,
 				kernelWidth
-			);	
-			hoNDArray<float_complext> result; result.create(imageDimsOs[0], imageDimsOs[1]);
+			);
 			plan.preprocess(*traj);
+			plans_.push_back(plan);
+		}
+		hoNDArray<std::complex<float>> arg(imageDimsOs);
+		arg.create(imageDimsOs[0], imageDimsOs[1]);
+		arg.fill(std::complex<float>(0.0,0.0));
+		imageDimsOs.push_back(nCoils);
+		hoNDArray<std::complex<float>> channelRecon(imageDimsOs);
+		channelRecon.fill(std::complex<float>(0.0,0.0));
+		hoNDArray<std::complex<float>> coilMap(imageDimsOs);
+		coilMap.fill(std::complex<float>(0.0,0.0));
+		imageDimsOs.pop_back();
+		int i;
+		if(!iterate.value()){
+			#pragma omp parallel for shared(plans_, traj,dcw,channelRecon,data) num_threads(nCoils)
+			for(i = 0; i < nCoils; ++i){
+				hoNDArray<std::complex<float>> tmp(imageDimsOs);
+				tmp.create(imageDimsOs[0], imageDimsOs[1]);
+				hoNDArray<std::complex<float>> channelData;
+				channelData.create(data->get_number_of_elements()/nCoils);
+				memcpy(channelData.get_data_ptr(), data->begin()+i*(data->get_number_of_elements()/nCoils), sizeof(std::complex<float>)*(data->get_number_of_elements()/nCoils));
+				plans_[i].compute(channelData, tmp, *dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C);
+				memcpy(&channelRecon(0,0,i), tmp.get_data_ptr(), sizeof(std::complex<float>)*imageDimsOs[0]*imageDimsOs[1]);
+			}
+			//multiplyConj(channelRecon, channelRecon, channelRecon);
+			//sum(&channelRecon,2);	
+			Gadgetron::coil_map_2d_Inati(channelRecon,coilMap, 7, 3);
+			Gadgetron::coil_combine(channelRecon, coilMap, 2, arg);
+			//sqrt_inplace(&channelRecon);
+			return boost::make_shared<hoNDArray<std::complex<float>>>(arg);
+		}
+		else{
+///First step
+			hoNDArray<float> empty_dcw;
+			std::vector<size_t> flat_dim = {imageDimsOs[0]*imageDimsOs[1]};
+			//empty_dcw.fill(1.0);
+			#pragma omp parallel for shared(plans_, traj,dcw,channelRecon,data) num_threads(nCoils)
+			for(i = 0; i < nCoils; ++i){
+				hoNDArray<std::complex<float>> tmp(imageDimsOs);
+				tmp.create(imageDimsOs[0], imageDimsOs[1]);
+				tmp.fill(std::complex<float>(0.0,0.0));
+				hoNDArray<std::complex<float>> channelData;
+				channelData.create(data->get_number_of_elements()/nCoils);
+				memcpy(channelData.get_data_ptr(), data->begin()+i*(data->get_number_of_elements()/nCoils), sizeof(std::complex<float>)*(data->get_number_of_elements()/nCoils));
+				channelData *= *dcw;
+				plans_[i].compute(channelData, tmp, empty_dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C);
+				memcpy(&channelRecon(0,0,i), tmp.get_data_ptr(), sizeof(std::complex<float>)*imageDimsOs[0]*imageDimsOs[1]);
+			}
+			Gadgetron::coil_map_2d_Inati(channelRecon,coilMap, 7, 3);
+			//hoNDArray<std::complex<float>> I(coilMap);
+			//multiplyConj(I,coilMap,I);
+			//I *= *conj(&coilMap);
+			//sum_over_dimension(I,I,2);
+			//sqrt_inplace(&I);
+			for(i = 0; i<channelRecon.get_number_of_elements(); i++){
+				channelRecon[i] *= conj(coilMap[i]);
+			}
+			//write_nd_array(&p,"p.cplx");
+			
+
+///Setup CG
+			hoNDArray<std::complex<float>> b(imageDimsOs[0]*imageDimsOs[1]);
+			b.fill(std::complex<float>(0.0,0.0));
+			hoNDArray<std::complex<float>> p(imageDimsOs);
+			for(int i =0; i < p.get_number_of_elements(); i++){
+				for(int j = 0; j < nCoils; j++){
+					p[i] += channelRecon[j*p.get_number_of_elements()+i];
+				}
+			}
+			for(int x = 0; x<p.get_size(0); x++){
+				for(int y = 0; y<p.get_size(1); y++){
+					if(x < (imageDimsOs[0]-imageDims[0])/2 || x > (imageDimsOs[0]+imageDims[0])/2 || y < (imageDimsOs[1]-imageDims[1])/2 || y > (imageDimsOs[1]+imageDims[1])/2){
+						p[x*p.get_size(0)+y] = 0;
+					}
+				}
+			}
+			hoNDArray<std::complex<float>> r(p);
+			r.reshape(&flat_dim); 
+			std::complex<float> rhr = std::complex<float>(0.0,0.0);
+			std::complex<float> phq = std::complex<float>(0.0,0.0);
+			for(int i =0; i < r.get_number_of_elements(); i++){
+					rhr += r[i]*conj(r[i]);
+				}
+			std::complex<float> rhr0 = rhr;
+//Iterate
+			size_t niter = 0;
+			while(abs(rhr/rhr0) > iteration_tol.value() && niter < iteration_max.value()) {
+
+				niter++;
+				std::cout << "Iteration #" << niter << std::endl; 
+				std::cout << "Iteration Tol = " << rhr/rhr0 << std::endl;
+				channelRecon.create(imageDimsOs[0],imageDimsOs[1],nCoils);
+				channelRecon.fill(std::complex<float>(0.0,0.0));
+				#pragma omp parallel for shared(channelRecon,plans_) num_threads(nCoils)
+				for(int i = 0; i < nCoils; i++){
+					hoNDArray<std::complex<float>> channelData;
+					channelData.create(data->get_number_of_elements()/nCoils);
+					channelData.fill(std::complex<float>(0.0,0.0));
+					hoNDArray<std::complex<float>> tmp(p);
+					hoNDArray<std::complex<float>> coilMap_i = hoNDArray<std::complex<float>>(imageDimsOs[0],imageDimsOs[1], &coilMap(0,0,i));
+					for(int j = 0; j<tmp.get_number_of_elements(); j++){
+						tmp[j] *= coilMap_i[j];
+					}
+					plans_[i].compute(tmp, channelData, empty_dcw, hoNFFT_plan<float, 2>::NFFT_FORWARDS_C2NC);
+					channelData *= *dcw;
+					tmp.fill(std::complex<float>(0.0,0.0));
+					for(int j = 0; j<channelData.get_number_of_elements(); j++){
+						channelData[j] /= nCoils;
+					}
+					plans_[i].compute(channelData, tmp, empty_dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C);
+					for(int j = 0; j<tmp.get_number_of_elements(); j++){
+						tmp[j] *= conj(coilMap_i[j]);
+					}
+					memcpy(&channelRecon(0,0,i), tmp.get_data_ptr(), sizeof(std::complex<float>)*imageDimsOs[0]*imageDimsOs[1]);
+				}
+				#pragma omp barrier
+				hoNDArray<std::complex<float>> q(imageDimsOs);
+				q.fill(std::complex<float>(0.0,0.0));
+				for(int i =0; i < q.get_number_of_elements(); i++){
+					for(int j = 0; j < nCoils; j++){
+						q[i] += channelRecon[j*q.get_number_of_elements()+i];
+					}
+				}
+				for(int x = 0; x<q.get_size(0); x++){
+					for(int y = 0; y<q.get_size(1); y++){
+						if(x < (imageDimsOs[0]-imageDims[0])/2 || x > (imageDimsOs[0]+imageDims[0])/2 || y < (imageDimsOs[1]-imageDims[1])/2 || y > (imageDimsOs[1]+imageDims[1])/2){
+							q[x*q.get_size(0)+y] = 0;
+						}
+					}
+				}
+				phq = std::complex<float>(0.0,0.0);
+				for(int i =0; i < q.get_number_of_elements(); i++){
+					phq += p[i]*conj(q[i]);
+				}
+				std::cout << phq << std::endl;
+				for(int i =0; i < b.get_number_of_elements(); i++){
+					b[i] += rhr/phq*p[i];
+				}
+				std::complex<float> rhro = rhr;
+				rhr = std::complex<float>(0.0,0.0);
+				for(int i =0; i < r.get_number_of_elements(); i++){
+					r[i] -= rhro/phq*q[i];
+					rhr += r[i]*conj(r[i]);
+				}
+				for(int i =0; i < p.get_number_of_elements(); i++){
+					p[i] = r[i]+rhr/rhro*p[i];
+				}					
+			}
+			b.reshape(&imageDimsOs);
+			return boost::make_shared<hoNDArray<std::complex<float>>>(b);
+		}
+	}	
+
+	boost::shared_ptr<hoNDArray<std::complex<float>>> CPUGriddingReconGadget::reconstructChannel(
+		hoNDArray<std::complex<float>> *data,
+		hoNDArray<floatd2> *traj,
+		hoNDArray<float> *dcw,
+		hoNFFT_plan<float, 2> plan
+	){	
+		if(!iterate.value()){
+			hoNDArray<std::complex<float>> result; result.create(imageDimsOs[0], imageDimsOs[1]);
 			plan.compute(*data, result, *dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C); 
 
-			return boost::make_shared<hoNDArray<float_complext>>(result);
+			return boost::make_shared<hoNDArray<std::complex<float>>>(result);
 		}else{	
 			// do iterative reconstruction
 		}
@@ -138,8 +281,7 @@ namespace Gadgetron{
 		auto trajPtr = traj->get_data_ptr();
 		auto ptr = dcwTraj->get_data_ptr();
 		for(unsigned int i = 0; i != dcwTraj->get_number_of_elements()/3; i++){
-			trajPtr[i][0] = ptr[i*3];
-			trajPtr[i][1] = ptr[i*3+1];
+			trajPtr[i] = floatd2(ptr[i*3],ptr[i*3+1]);
 			dcwPtr[i] = ptr[i*3+2];
 		}
 		return std::make_tuple(traj, dcw);

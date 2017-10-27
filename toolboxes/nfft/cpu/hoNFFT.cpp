@@ -6,6 +6,7 @@
 #include "hoNDArray_elemwise.h"
 #include "hoNDArray_reductions.h"
 #include "hoNDArray_utils.h"
+#include "hoNDArray_fileio.h"
 
 #include "vector_td_utilities.h"
 #include "vector_td_operators.h"
@@ -108,7 +109,8 @@ namespace Gadgetron{
 
         switch(mode){
             case NFFT_FORWARDS_C2NC:{
-                deapodize(d, true);
+               // deapodize(d, true);
+				deapodize(d);
                 fft(d, NFFT_FORWARDS);
                 convolve(d, m, NFFT_CONV_C2NC);
                 
@@ -116,7 +118,8 @@ namespace Gadgetron{
                     if(m.get_number_of_elements() != w.get_number_of_elements())
                         throw std::runtime_error("Incompatible dimensions");
 
-                    m /= w;
+                    m /= w; //possible mistake? mcr
+					//m *= w;
                 }
                 break;
             }
@@ -144,7 +147,7 @@ namespace Gadgetron{
 
                 convolve(d, m, NFFT_CONV_NC2C);
                 fft(m, NFFT_BACKWARDS);
-                deapodize(m);
+                deapodize(m, true);
 
                 break;
             }
@@ -244,11 +247,12 @@ namespace Gadgetron{
         bool fourierDomain
     )
     {
+		//write_nd_array(&da,"da.real");
         if(fourierDomain){
             if(da.get_number_of_elements() != d.get_number_of_elements())
                 throw std::runtime_error("Incompatiblef deapodization dimensions");
             
-            d *= da;
+            d /= da;
         }else{
             if(da.get_number_of_elements() != d.get_number_of_elements())
                 throw std::runtime_error("Incompatible deapodization dimensions");

@@ -10,6 +10,7 @@
 #include "GenericReconGadget.h"
 #include "gadgetron_mri_noncartesian_export.h"
 #include "hoNDArray.h"
+#include "hoNFFT.h"
 
 namespace Gadgetron{
 
@@ -39,8 +40,10 @@ namespace Gadgetron{
 		*/
 
 		GADGET_PROPERTY(kernelWidthProperty, float, "Kernel width", 5.5);
-		GADGET_PROPERTY(oversamplingFactorProperty, float, "Oversmapling factor", 1.5);
-		GADGET_PROPERTY(iterateProperty, bool, "Iterate bool", false);
+		GADGET_PROPERTY(oversamplingFactorProperty, float, "Oversmapling factor", 2);
+		GADGET_PROPERTY(iterate, bool, "Iterate bool", false);
+		GADGET_PROPERTY(iteration_max, int, "Maximum Iterations", 10);
+		GADGET_PROPERTY(iteration_tol, float, "Iteratation Tolerance", 1e-3);
 
 		/**
 			Storage for the properties above
@@ -68,8 +71,8 @@ namespace Gadgetron{
 			/param nCoils: number of channels
 		*/
 
-		boost::shared_ptr<hoNDArray<float_complext>> reconstruct(
-			hoNDArray<float_complext> *data,
+		boost::shared_ptr<hoNDArray<std::complex<float>>> reconstruct(
+			hoNDArray<std::complex<float>> *data,
 			hoNDArray<floatd2> *traj,
 			hoNDArray<float> *dcw,
 			size_t nCoils
@@ -83,10 +86,11 @@ namespace Gadgetron{
 			/param dcw: density compensation
 		*/
 
-		boost::shared_ptr<hoNDArray<float_complext>> reconstructChannel(
-			hoNDArray<float_complext> *data,
+		boost::shared_ptr<hoNDArray<std::complex<float>>> reconstructChannel(
+			hoNDArray<std::complex<float>> *data,
 			hoNDArray<floatd2> *traj,
-			hoNDArray<float> *dcw
+			hoNDArray<float> *dcw,
+			hoNFFT_plan<float, 2> plan
 		);
 
 		/**
