@@ -98,7 +98,7 @@ namespace Gadgetron {
 				return GADGET_FAIL;
 			}
 			
-			if (buffer->trajectory_ == boost::none) {
+			if (!buffer->trajectory_) {
 				GERROR("Trajectories not found. Bailing out.\n");
 				m1->release();
 				return GADGET_FAIL;
