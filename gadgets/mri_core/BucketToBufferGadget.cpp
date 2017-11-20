@@ -802,6 +802,9 @@ namespace Gadgetron{
         }
     }
 
+	std::set<short unsigned int>::iterator e1_it = stats.kspace_encode_step_1.find(acqhdr.idx.kspace_encode_step_1);
+	e1 = std::distance(stats.kspace_encode_step_1.begin(),e1_it);
+
     std::complex<float>* pData = &dataBuffer.data_(offset, e1, e2, 0, NUsed, SUsed, slice_loc);
 
     for (uint16_t cha = 0; cha < NCHA; cha++)
@@ -814,11 +817,12 @@ namespace Gadgetron{
 
     if (acqhdr.trajectory_dimensions > 0)
     {
+		//e1 = std::floor(e1/4);
 
         hoNDArray< float > & acqtraj = *it->traj_->getObjectPtr();  // TODO do we need to check this?
 
         float * trajptr;
-
+		
         trajptr = &(*dataBuffer.trajectory_)(0, offset, e1, e2, NUsed, SUsed, slice_loc);
 
         memcpy(trajptr, &acqtraj(0, acqhdr.discard_pre), sizeof(float)*npts_to_copy*acqhdr.trajectory_dimensions);

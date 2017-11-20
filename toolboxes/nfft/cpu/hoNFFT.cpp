@@ -220,10 +220,12 @@ namespace Gadgetron{
         }
         else if(D==2)
         {
-            if (mode == NFFT_FORWARDS)
+            if (mode == NFFT_FORWARDS){
                 hoNDFFT<Real>::instance()->fft2c(d);
-            else
-                hoNDFFT<Real>::instance()->ifft2c(d);
+				write_nd_array(&d,"fd.cplx");}
+            else{
+				write_nd_array(&d,"id.cplx");
+                hoNDFFT<Real>::instance()->ifft2c(d);}
         }
         else if(D==3)
         {
@@ -247,7 +249,7 @@ namespace Gadgetron{
         bool fourierDomain
     )
     {
-		//write_nd_array(&da,"da.real");
+		write_nd_array(&da,"da.cplx");
         if(fourierDomain){
             if(da.get_number_of_elements() != d.get_number_of_elements())
                 throw std::runtime_error("Incompatiblef deapodization dimensions");
@@ -259,6 +261,7 @@ namespace Gadgetron{
 
             d /= da;
         }
+		write_nd_array(&d,"dafter.cplx");
     }
 
     template<class Real, unsigned int D>
@@ -267,17 +270,17 @@ namespace Gadgetron{
         kosf = std::floor(0.91/(osf*1e-3));
         kwidth = osf*kw/2;
 
-        Real tmp = kw*(osf-0.5);
+        Real tmp = kwidth/osf*(osf-0.5);
         beta = M_PI*std::sqrt(tmp*tmp-0.8);
 
-        p.create(kosf*kwidth+1);
+        p.create(std::ceil(kosf*kwidth+1));
         for(size_t i = 0; i < kosf*kwidth+1; i++){
             Real om = Real(i)/Real(kosf*kwidth);
             p[i] = bessi0(beta*std::sqrt(1-om*om));
         }
-        Real pConst = p[0];
+        Real pConst = 1/(kwidth*p[0]);
         for(auto it = p.begin(); it != p.end(); it++)
-            *it /= pConst;
+            *it *= pConst;
         p[kosf*kwidth] = 0;
         
         // Need to fix to allow for flexibility in dimensions
@@ -286,7 +289,7 @@ namespace Gadgetron{
             Real x = (i-osf*n[0]/2)/n[0];
             Real tmp = M_PI*M_PI*kw*kw*x*x-beta*beta;
             auto sqa = std::sqrt(complex<Real>(tmp, 0));
-            dax[i] = (std::sin(sqa)/sqa).real();
+            dax[i] = (std::sin(sqa)/sqa).real()+100;
         }
         auto daxConst = dax[osf*n[0]/2-1];
         for(auto it = dax.begin(); it != dax.end(); it++)
@@ -359,6 +362,7 @@ namespace Gadgetron{
             }
             case 2:{
                 d.fill(0);
+				write_nd_array(&m,"m.cplx");
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     for(int lx = -kwidth; lx < kwidth+1; lx++){
                         for(int ly = -kwidth; ly < kwidth+1; ly++){
@@ -378,7 +382,7 @@ namespace Gadgetron{
                             nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
                             nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, osf*n[1]-1);
 
-                            d[i] += m[(size_t)(nxt+nyt*osf*n[1])]*kwx*kwy;
+                            d[i] += m[(size_t)(nxt+nyt*osf*n[0])]*kwx*kwy;
                         }
                     }
                 }
@@ -482,12 +486,12 @@ namespace Gadgetron{
                         }
                     }
 
-                    for(size_t i = 0; i < n[0]*osf; i++){
+                    /*for(size_t i = 0; i < n[0]*osf; i++){
                         m[i] = 0;
                         m[n[0]*osf+i] = 0;
                         m[n[0]*osf*(n[0]*osf-1)+i] = 0;
                         m[n[0]*osf*i+(n[0]*osf-1)] = 0;
-                    }
+                    }*/
                 }
                 break;
             }

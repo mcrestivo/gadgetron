@@ -73,6 +73,7 @@ namespace Gadgetron{
 
 		boost::shared_ptr<hoNDArray<std::complex<float>>> reconstruct(
 			hoNDArray<std::complex<float>> *data,
+			hoNDArray<std::complex<float>> coilMap,
 			hoNDArray<floatd2> *traj,
 			hoNDArray<float> *dcw,
 			size_t nCoils
@@ -101,6 +102,10 @@ namespace Gadgetron{
 		std::tuple<boost::shared_ptr<hoNDArray<floatd2>>, boost::shared_ptr<hoNDArray<float>>> 
 		separateDcwAndTraj(
 			hoNDArray<float> *dcwTraj
+		);
+
+		hoNDArray<std::complex<float>> computeCsm(
+			IsmrmrdDataBuffered *ref_
 		);
 	};
 }
