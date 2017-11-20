@@ -610,7 +610,9 @@ namespace Gadgetron{
 	}
 
 	GadgetContainerMessage< GenericReconJob >* m4 = new GadgetContainerMessage< GenericReconJob >();
-
+	write_nd_array(traj_host.get(),"trajgpu.real");
+	write_nd_array(data_host.get(),"datagpu.cplx");
+	write_nd_array(csm_host.get(),"csmgpu.cplx");
 	m4->getObjectPtr()->dat_host_ = data_host;
 	m4->getObjectPtr()->csm_host_ = csm_host;
 	m4->getObjectPtr()->reg_host_ = reg_host;

@@ -33,11 +33,13 @@ include_directories(
 
 set( gadgetron_mri_noncartesian_header_files
   GriddingReconGadget.h
-	CPUGriddingReconGadget.h)
+  CPUGriddingReconGadget.h
+  CPUGridding_PrepRef.h)
 
 set( gadgetron_mri_noncartesian_src_files
   GriddingReconGadget.cpp
-	CPUGriddingReconGadget.cpp) 
+  CPUGriddingReconGadget.cpp
+  CPUGridding_PrepRef.cpp) 
 
 set( gadgetron_mri_noncartesian_config_files
 	config/Generic_CPU_Gridding_Recon.xml
