@@ -42,8 +42,6 @@
 
 #include "NHLBICompression.h"
 #include "hoNDFFT.h"
-#include "hoNDArray_fileio.h"
-#include "fwht.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include "zfp/zfp.h"
@@ -1355,75 +1353,26 @@ public:
             
 
             float sigma_noise = 1;
-
-			if(acq.getHead().idx.kspace_encode_step_1 == 0){
-				//std::cout << local_tolerance << std::endl;
-			}
-			if (tmp.get_number_of_elements() == 0){
-            	//tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
-			}
-			//std::cout << "k space encode line " << acq.getHead().idx.kspace_encode_step_1 << std::endl;
-            //memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
-            //std::vector<float> input_data((float*)&acq.getDataPtr()[0], (float*)&acq.getDataPtr()[0] + acq.getHead().active_channels* acq.getHead().number_of_samples*2);
-			if(acq.getHead().idx.kspace_encode_step_1 == 127){
-            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmp_epi.cplx" );
-			}
-			bool use_transform = false;
 			int N = acq.getHead().active_channels*acq.getHead().number_of_samples*2;
-			if(use_transform){
-				//std::cout << "size " << N << std::endl;
-				if(N > 50000) { 
-					Gadgetron::hoNDFFT<float>::instance()->dct((float*)&acq.getDataPtr()[0], N, 1, 1);
-				}
-				else {
-					Gadgetron::hoNDFFT<float>::instance()->dct((float*)&acq.getDataPtr()[0], N, 1, 1);
-				}
-			/*	for(int N = 2; N < acq.getHead().number_of_samples*2; N = N*2){
-					if(std::floor(N/acq.getHead().number_of_samples)){
-						if(float(N)/acq.getHead().number_of_samples == 1){ n = N; }
-						else{n = N/2;}
-						break;
-					}
-				}
-				std::cout << n << "     " << acq.getHead().number_of_samples << std::endl;
-            	for(int i = 0; i < acq.getHead().active_channels; i++){
-					fwht(&input_data[0]+acq.getHead().number_of_samples*2*i,n*2); //HERE IS WHERE WE DO THE TRANSFORM
-					//fix scaling
-					for(int j = 0; j < n*2; j++){
-						input_data[acq.getHead().number_of_samples*2*i+j] *= std::sqrt(2*n);
-					}		
-				}*/
-			}
-				//memcpy(tmp.get_data_ptr(), &input_data[0], acq.getHead().active_channels* acq.getHead().number_of_samples*2*sizeof(float));
-            	//Gadgetron::write_nd_array< std::complex<float> >( &tmp, "tmpifft.cplx" );
-			//}
-			//std::cout << local_tolerance << std::endl;
 
 			//Segmented NHLBI compression buffers
 			std::vector<uint8_t> serialized_buffer;
 			int segments = 5;	
 			int segment_size = std::ceil(acq.getHead().number_of_samples*2.0/segments);
-			/*if (N%segments) {
-            	throw GadgetronClientException("Invalid segment size");
-        	}*/
 			float noise_bw_scale_factor_ = (float)std::sqrt(2*acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
-			bool use_rms = false;
+			bool use_rms = false; //use rms channel noise or individual channel noise
+			
 			for(int ch = 0; ch < acq.getHead().active_channels; ch++){
 
 				//Determine tolerance
 				float sigma = use_rms ? stat.sigma_rms/std::sqrt(2.) : stat.sigma_diagonal[ch]/std::sqrt(2.);
 				if(sigma == 0){ sigma = 1; stat.status = 1; }
 			    if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-					//sigma /= std::sqrt(2.0); //noise std
-					sigma *= stat.noise_scaling;
+					//sigma *= stat.noise_scaling;
 					sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
-					//sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us);//not over sampled (i.e. spiral)	
-					//std::cout << sigma_noise << std::endl;
-					//std::cout << acq.getHead().sample_time_us << std::endl;
-					//std::cout << stat.noise_dwell_time_us << std::endl;
 			    }
 				float local_tolerance = sigma*std::sqrt(3./std::pow((1-SNR_Loss),2)-3);
-				//std::cout << stat.noise_sc1-aling << std::endl;
+
 				for(int s = 0; s < segments; s++){
 					int samples_to_copy = std::min(acq.getHead().number_of_samples*2-s*segment_size, segment_size);
 					std::vector<float> input_data(samples_to_copy, 0.0);
@@ -1434,6 +1383,7 @@ public:
 					else{serialized_buffer.insert(serialized_buffer.end(), serialized.begin(), serialized.end());}
 				}
 			}
+
 	        compressed_bytes_sent_ += serialized_buffer.size();
 	        uncompressed_bytes_sent_ += data_elements*2*sizeof(float);                        
 	        uint32_t bs = (uint32_t)serialized_buffer.size();
@@ -1533,62 +1483,19 @@ public:
 			for(int ch = 0; ch < acq.getHead().active_channels; ch++){
 
 				//Determine tolerance
-				//float sigma = stat.sigma_rms;
 				float sigma = use_rms ? stat.sigma_rms/std::sqrt(2.) : stat.sigma_diagonal[ch]/std::sqrt(2.);
-				//float sigma = use_rms ? stat.sigma_rms : stat.sigma_diagonal[ch];
 				if(sigma == 0){ sigma = 1; stat.status = 1; }
 				if (stat.status && sigma > 0 && stat.noise_dwell_time_us && acq.getHead().sample_time_us) {
-						//sigma /= std::sqrt(2.0); //noise std
-						//std::cout << stat.relative_receiver_noise_bw << std::endl;
-						sigma *= stat.noise_scaling;
-						//sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us);
+						//sigma *= stat.noise_scaling;
 						sigma /= std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
 				}
 				float local_tolerance = 14.*sigma*std::sqrt(1/std::pow((1-SNR_Loss),2)-1);
-				std::cout << local_tolerance << std::endl;
 
 		        size_t comp_buffer_size = 4.*sizeof(float)*data_elements;
 		        char* comp_buffer = new char[comp_buffer_size];
 		        size_t compressed_size = 0;
 		        try {
 
-		/*			std::vector<float> real(acq.getHead().number_of_samples*acq.getHead().active_channels);
-					std::vector<float> imag(acq.getHead().number_of_samples*acq.getHead().active_channels);
-					std::vector<float> data(acq.getHead().number_of_samples*acq.getHead().active_channels*2);
-					memcpy(&data[0], acq.getDataPtr(), acq.getHead().number_of_samples*acq.getHead().active_channels*2*sizeof(float));
-					for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels; i++){
-				real[i] = data[2*i];
-						imag[i] = data[2*i+1];
-					}
-					for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels; i++){
-						data[i] = real[i];
-						data[i+acq.getHead().number_of_samples*acq.getHead().active_channels] = imag[i];
-					}
-
-					compressed_size = compress_zfp_tolerance(&data[0],
-										                                     acq.getHead().number_of_samples*2, acq.getHead().active_channels,
-										                                     local_tolerance, comp_buffer, comp_buffer_size);
-
-
-					std::random_device generator;
-					float abs_tol = std::exp2(std::floor(std::log2(local_tolerance)));
-					std::normal_distribution<float> distribution(0.0,1.0);
-					std::vector<float> data(acq.getHead().number_of_samples*acq.getHead().active_channels*2);
-					for(int i = 0; i < acq.getHead().number_of_samples*acq.getHead().active_channels*2; i++){
-						data[i] = distribution(generator);
-					}
-
-					if(true){
-						if (tmp.get_number_of_elements() == 0){
-							tmp.create(acq.getHead().number_of_samples,acq.getHead().active_channels,128);
-						}
-						memcpy(tmp.get_data_ptr()+acq.getHead().number_of_samples*acq.getHead().active_channels*acq.getHead().idx.kspace_encode_step_1, &acq.getDataPtr()[0], acq.getHead().active_channels*acq.getHead().number_of_samples*2*sizeof(float));
-						if(acq.getHead().idx.kspace_encode_step_1 == 127){
-							Gadgetron::write_nd_array< std::complex<float> >( &tmp, "data_pre.cplx" );
-						}
-					}
-
-					//compressed_size = compress_zfp_tolerance(&data[0],acq.getHead().number_of_samples*2, acq.getHead().active_channels,local_tolerance, comp_buffer, comp_buffer_size);*/
 
 		            compressed_size = compress_zfp_tolerance((float*)&acq.getDataPtr()[acq.getHead().number_of_samples*ch],
 		                                                     acq.getHead().number_of_samples/2.,
@@ -1603,9 +1510,8 @@ public:
                 compressed_bytes_sent_ += compressed_size;
                 uncompressed_bytes_sent_ += acq.getHead().number_of_samples*2*sizeof(float);
                 float compression_ratio = (1.0*data_elements*2*sizeof(float))/(float)compressed_bytes_sent_;
-                //std::cout << "Compression ratio: " << compression_ratio << std::endl;
 
-		        //TODO: Write compressed buffer
+		        //Write compressed buffer
 		        uint32_t bs = (uint32_t)compressed_size;
 		        boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
 		        boost::asio::write(*socket_, boost::asio::buffer(comp_buffer, compressed_size));
@@ -1937,24 +1843,6 @@ int main(int argc, char **argv)
                 c.compressionDwellTimeReference_us = 0.0;
 				c.NoiseScalingFactor = 1.0;
                 if (noise_stats.status) {
-					std::cout << h.encoding[0].encodedSpace.matrixSize.x << std::endl;
-					std::cout << h.encoding[0].reconSpace.matrixSize.x  << std::endl;
-					//std::cout << h.encoding[0].encodingLimits.kspace_encoding_step_2 << std::endl;
-					if(h.encoding[0].trajectory == "spiral" || h.encoding[0].trajectory == "cartesian" || h.encoding[0].trajectory == "radial"){
-						//noise_stats.sigma_rms *= std::sqrt(2);
-						noise_stats.noise_scaling *= 1;
-						noise_stats.oversampled = false;
-						std::cout << h.encoding[0].trajectory << std::endl;
-					}
-					else{
-						noise_stats.oversampled = true;
-						if(h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1 > 1){
-							//noise_stats.noise_scaling  *= std::sqrt(std::sqrt(2.0/std::sqrt(h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1)));
-							//noise_stats.noise_scaling *= std::sqrt(.8409);//mcr_for_sim_data
-						}
-						else{ noise_stats.noise_scaling /= std::sqrt(2.*std::sqrt(.793)); }
-							//std::cout << h.encoding[0].trajectory << std::endl;
-					}
                     c.compressionSigmaReference = noise_stats.sigma_rms;
 					c.NoiseScalingFactor = noise_stats.noise_scaling;
                     c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
@@ -1974,11 +1862,9 @@ int main(int argc, char **argv)
 				if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
 					noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
 				} else {
-					//noise_stats.relative_receiver_noise_bw = .793;
-					noise_stats.relative_receiver_noise_bw = 1.;
+					noise_stats.relative_receiver_noise_bw = .793;
+					//noise_stats.relative_receiver_noise_bw = 1.;
 				}
-				std::cout << h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1 << std::endl;
-				std::cout << h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_2 << std::endl;
 
             }
         }
@@ -2047,7 +1933,7 @@ int main(int argc, char **argv)
 		  }
 		}
 
-		    if (compression_precision > 0 || compression_tolerance > 0.0) {
+		    /*if (compression_precision > 0 || compression_tolerance > 0.0) {
 		        std::cout << "Compression ratio: " << con.compression_ratio() << std::endl;
 				if(use_zfp_compression){
 					  std::ofstream myfile;
@@ -2062,7 +1948,7 @@ int main(int argc, char **argv)
 					  myfile.close();
 				}
 		    }
-
+			*/
 		    con.send_gadgetron_close();
 		    con.wait();
 

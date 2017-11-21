@@ -238,35 +238,6 @@ namespace Gadgetron{
 		            stream_close(cstream);            
 		            delete [] comp_buffer;
 				}
-	
-				int cha = m2->getObjectPtr()->get_size(1);
-				int samples = m2->getObjectPtr()->get_size(0);
-
-				/*std::vector<float> real(samples*cha);
-				std::vector<float> imag(samples*cha);
-				std::vector<float> data(samples*cha*2);
-				memcpy(&data[0], m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				for(int i = 0; i < samples*cha; i++){
-					real[i] = data[i];
-					imag[i] = data[i+samples*cha];
-				}
-				for(int i = 0; i < samples*cha; i++){
-					data[2*i] = real[i];
-					data[2*i+1] = imag[i];
-				}
-				
-				//Print data for analysis	*/			
-				//std::cout << "channels = " << cha << std::endl;
-				//std::cout << "samples = " << samples << std::endl;
-			
-				if(tmp.get_number_of_elements() == 0){
-					//tmp.create(samples,cha,128);
-				}
-				//memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
-					//std::cout << 7 << std::endl;
-					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "data_post.cplx");
-				}
 
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION1);
@@ -330,30 +301,6 @@ namespace Gadgetron{
                     return 0;
                 }
 
-
-                //Gadgetron::hoNDFFT<float>::instance()->fft(m2->getObjectPtr(),0);
-				//std::cout << "channels = " << cha << std::endl;
-				//std::cout << "samples = " << samples << std::endl;
-				bool use_transform = false;
-				int N = samples*cha*2;
-				if(use_transform){
-					//std::cout << "size " << N << std::endl;
-					if(N > 50000) { 
-						Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr, N, 1, -1);
-					}
-					else {
-						Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr, N, 1, -1);
-					}
-				}
-				
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
-					//tmp.create(samples,cha,128);
-				}
-				//memcpy(tmp.get_data_ptr()+m1->getObjectPtr()->idx.kspace_encode_step_1*samples*cha, m2->getObjectPtr()->get_data_ptr(), samples*cha*2*sizeof(float));
-				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 127){
-					//std::cout << 7 << std::endl;
-					//Gadgetron::write_nd_array<std::complex<float>>(&tmp, "data_post_nhlbi.cplx");
-				}
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
 
