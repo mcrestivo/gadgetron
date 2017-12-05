@@ -238,6 +238,8 @@ namespace Gadgetron{
 
             typename uint64d<D>::Type n;
 
+			typename uint64d<D>::Type nosf;
+
             Real wg, kw, kosf, kwidth, beta, osf;
 
             hoNDArray<Real> p, daf, nx, ny, nz;

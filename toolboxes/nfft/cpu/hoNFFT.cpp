@@ -266,70 +266,77 @@ namespace Gadgetron{
 
     template<class Real, unsigned int D>
     void hoNFFT_plan<Real, D>::initialize(){
-        kw = wg/osf;
-        kosf = std::floor(0.91/(osf*1e-3));
-        kwidth = osf*kw/2;
+		nosf = n;		
+		for(size_t i = 0 i < sizeof(n)/sizeof(n[0]); i++){
+			nosf[i] *= osf;
+			nosf[i] = std::round(nosf[i]/2)*2;
+		}
+        kw = wg;
+        kwidth = kw/2.0;
+		kosf = std::floor(0.91/(kwidth*1e-3));
 
-        Real tmp = kwidth/osf*(osf-0.5);
+        Real tmp = kw/osf*(osf-0.5);
         beta = M_PI*std::sqrt(tmp*tmp-0.8);
 
-        p.create(std::ceil(kosf*kwidth+1));
-        for(size_t i = 0; i < kosf*kwidth+1; i++){
-            Real om = Real(i)/Real(kosf*kwidth);
+        p.create(std::ceil(kosf*kwidth)-1);
+		p.fill(0.0);
+        for(size_t i = 0; i < std::ceil(kosf*kwidth); i++){
+            Real om = Real(i)/Real(std::ceil(kosf*kwidth));
             p[i] = bessi0(beta*std::sqrt(1-om*om));
         }
-        Real pConst = 1/(kwidth*p[0]);
+       Real pConst = 1/(kwidth*p[0]);
         for(auto it = p.begin(); it != p.end(); it++)
             *it *= pConst;
-        p[kosf*kwidth] = 0;
+        p[std::ceil(kosf*kwidth)-1] = 0;
         
         // Need to fix to allow for flexibility in dimensions
-        hoNDArray<Real> dax(osf*n[0]);
-        for(int i = 0; i < osf*n[0]; i++){
-            Real x = (i-osf*n[0]/2)/n[0];
-            Real tmp = M_PI*M_PI*kw*kw*x*x-beta*beta;
+        hoNDArray<Real> dax(size_t(nosf[0]));
+		dax.fill(0.0);
+        for(int i = 0; i < nosf[0]; i++){
+            Real x = (i-nosf[0]/2)/n[0];
+            Real tmp = M_PI*M_PI*kw/osf*kw/osf*x*x-beta*beta;
             auto sqa = std::sqrt(complex<Real>(tmp, 0));
-            dax[i] = (std::sin(sqa)/sqa).real()+100;
+            dax[i] = (std::sin(sqa)/sqa).real();
         }
-        auto daxConst = dax[osf*n[0]/2-1];
+        auto daxConst = dax[nosf[0]/2-1];
         for(auto it = dax.begin(); it != dax.end(); it++)
             *it /= daxConst;
 
         switch(D){
             case 1:{
-                da.create(osf*n[0]);
+                da.create(nosf[0]);
                 std::copy(dax.begin(), dax.end(), da.begin());
                 nx.create(k.get_number_of_elements());
                 for(size_t i = 0; i < k.get_number_of_elements(); i++)
-                    nx[i] = (n[0]*osf/2)+osf*n[0]*k[i][0];
+                    nx[i] = (nosf[0]/2)+nosf[0]*k[i][0];
                 break;
             }
             case 2:{
-                da.create(osf*n[0], osf*n[1]);
-                for(size_t i = 0; i < osf*n[0]; i++)
-                    for(size_t j = 0; j < osf*n[1]; j++)
-                        da[i+j*n[1]*osf] = dax[i]*dax[j];
+                da.create(nosf[0], nosf[1]);
+                for(size_t i = 0; i < nosf[0]; i++)
+                    for(size_t j = 0; j < nosf[1]; j++)
+                        da[i+j*nosf[1]] = dax[i]*dax[j];
                 nx.create(k.get_number_of_elements());
                 ny.create(k.get_number_of_elements());
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
-                    nx[i] = (n[0]*osf/2)+osf*n[0]*k[i][0];
-                    ny[i] = (n[1]*osf/2)+osf*n[1]*k[i][1];
+                    nx[i] = (nosf[0]/2)+nosf[0]*k[i][0];
+                    ny[i] = (nosf[1]/2)+nosf[1]*k[i][1];
                 }
                 break;
             }
             case 3:{
-                da.create(osf*n[0], osf*n[1], osf*n[2]);
-                for(size_t i = 0; i < osf*n[0]; i++)
-                    for(size_t j = 0; j < osf*n[1]; j++)
-                        for(size_t k = 0; k < osf*n[3]; k++)
-                            da[i+n[1]*j*osf+n[2]*k*osf] = dax[i]*dax[j]*dax[k];
+                da.create(nosf[0], nosf[1], nosf[2]);
+                for(size_t i = 0; i < nosf[0]; i++)
+                    for(size_t j = 0; j < nosf[1]; j++)
+                        for(size_t k = 0; k < nosf[2]; k++)
+                            da[i+j*nosf[1]+nosf[2]*k] = dax[i]*dax[j]*dax[k];
                 nx.create(k.get_number_of_elements());
                 ny.create(k.get_number_of_elements());
                 nz.create(k.get_number_of_elements());
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
-                    nx[i] = (n[0]*osf/2)+osf*n[0]*k[i][0];
-                    ny[i] = (n[1]*osf/2)+osf*n[1]*k[i][1];
-                    nz[i] = (n[2]*osf/2)+osf*n[2]*k[i][2];
+                    nx[i] = (nosf[0]/2)+nosf[0]*k[i][0];
+                    ny[i] = (nosf[1]/2)+nosf[1]*k[i][1];
+                    nz[i] = (nosf[2]/2)+nosf[2]*k[i][2];
                 }
                 break;
                 
@@ -351,10 +358,10 @@ namespace Gadgetron{
                         Real nxt = std::round(nx[i]+lx);
                         Real kkx = std::min(
                             std::round(kosf*std::abs(nx[i]-nxt)),
-                            std::floor(kosf*kwidth)
+                            std::floor(kosf*kwidth-1)
                         );
                         Real kwx = p[kkx];
-                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
+                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
                         d[i] += m[(size_t)nxt]*kwx;
                     }
                 }
@@ -363,9 +370,11 @@ namespace Gadgetron{
             case 2:{
                 d.fill(0);
 				write_nd_array(&m,"m.cplx");
+				write_nd_array(&nx,"nx.real");
+				write_nd_array(&ny,"ny.real");
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
-                    for(int lx = -kwidth; lx < kwidth+1; lx++){
-                        for(int ly = -kwidth; ly < kwidth+1; ly++){
+                    for(int lx = -kwidth; lx <= kwidth; lx++){
+                        for(int ly = -kwidth; ly <= kwidth; ly++){
                             Real nxt = std::round(nx[i]+lx);
                             Real nyt = std::round(ny[i]+ly);
 
@@ -379,10 +388,10 @@ namespace Gadgetron{
                             );
                             Real kwx = p[kkx]; Real kwy = p[kky];
 
-                            nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
-                            nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, osf*n[1]-1);
-
-                            d[i] += m[(size_t)(nxt+nyt*osf*n[0])]*kwx*kwy;
+                            //nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
+                            //nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, osf*n[1]-1);
+							if(nxt >= 0 && nyt >=0 && nxt <= nosf[0]-1 && nyt <= nosf[1]-1)
+                            	d[i] += m[(size_t)(nxt+nyt*nosf[1])]*kwx*kwy;
                         }
                     }
                 }
@@ -451,7 +460,7 @@ namespace Gadgetron{
                             std::floor(kosf*kwidth)
                         );
                         Real kwx = p[kkx];
-                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
+                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
                         m[(size_t)nxt] += dw*kwx;
                     }
                 }
@@ -464,8 +473,8 @@ namespace Gadgetron{
                 m.fill(0);
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     ComplexType dw = d[i];
-                    for(int lx = -kwidth; lx < kwidth+1; lx++){
-                        for(int ly = -kwidth; ly < kwidth+1; ly++){
+                    for(int lx = -kwidth; lx <= kwidth; lx++){
+                        for(int ly = -kwidth; ly <= kwidth; ly++){
                             Real nxt = std::round(nx[i]+lx);
                             Real nyt = std::round(ny[i]+ly);
 
@@ -479,10 +488,10 @@ namespace Gadgetron{
                             );
                             Real kwx = p[kkx]; Real kwy = p[kky];
 
-                            nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, osf*n[0]-1);
-                            nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, osf*n[1]-1);
+                            nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
+                            nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, nosf[1]-1);
 
-                            m[(size_t)(nxt+nyt*osf*n[1])] += dw*kwx*kwy;
+                            m[(size_t)(nxt+nyt*nosf[1])] += dw*kwx*kwy;
                         }
                     }
 
