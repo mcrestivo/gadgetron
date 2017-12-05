@@ -96,8 +96,9 @@ namespace Gadgetron{
   gmax_ = max_grad;
   smax_ = max_slew;
   krmax_ = kr_max;
-  fov_ = fov_coeff;
-  
+  fov_[0] = fov_coeff;
+  fov_[1] = -fov_[0]*(1-vdsFactor.value())/kr_max;  
+
   samples_to_skip_start_  =  0; //n.get<int>(std::string("samplestoskipstart.value"))[0];
   samples_to_skip_end_    = -1; //n.get<int>(std::string("samplestoskipend.value"))[0];
   
@@ -105,7 +106,7 @@ namespace Gadgetron{
   GDEBUG("gmax:                    %f\n", gmax_);
   GDEBUG("Tsamp_ns:                %d\n", Tsamp_ns_);
   GDEBUG("Nints:                   %d\n", Nints_);
-  GDEBUG("fov:                     %f\n", fov_);
+  GDEBUG("fov:                     %f\n", fov_[0]);
   GDEBUG("krmax:                   %f\n", krmax_);
   GDEBUG("samples_to_skip_start_ : %d\n", samples_to_skip_start_);
   GDEBUG("samples_to_skip_end_   : %d\n", samples_to_skip_end_);
@@ -136,7 +137,7 @@ namespace Gadgetron{
 
     if (!prepared_) {
 
-      int     nfov   = 1;         /*  number of fov coefficients.             */
+      int     nfov   = 2;         /*  number of fov coefficients.             */
       int     ngmax  = 1e5;       /*  maximum number of gradient samples      */
       double  *xgrad;             /*  x-component of gradient.                */
       double  *ygrad;             /*  y-component of gradient.                */
@@ -147,7 +148,7 @@ namespace Gadgetron{
       double sample_time = (1.0*Tsamp_ns_) * 1e-9;
 
       // Calculate gradients 
-      calc_vds(smax_,gmax_,sample_time,sample_time,Nints_,&fov_,nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
+      calc_vds(smax_,gmax_,sample_time,sample_time,Nints_,&fov_[0],nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
 
       samples_per_interleave_ = std::min(ngrad,static_cast<int>(m1->getObjectPtr()->number_of_samples));
       GDEBUG("Using %d samples per interleave\n", samples_per_interleave_);

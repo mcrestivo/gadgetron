@@ -24,6 +24,8 @@ namespace Gadgetron{
     virtual ~SpiralToGenericGadget();
 
   protected:
+	
+	GADGET_PROPERTY(vdsFactor, double, "vds FOV reduction factor", 0.0);
 
     virtual int process_config(ACE_Message_Block* mb);
     
@@ -41,7 +43,7 @@ namespace Gadgetron{
     double  gmax_;
     double  smax_;
     double  krmax_;
-    double  fov_;
+    double  fov_[2];
     bool prepared_;
     
     boost::shared_ptr< hoNDArray<float> > host_traj_;
