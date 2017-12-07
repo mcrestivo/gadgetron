@@ -8,7 +8,7 @@
 #include "b1_map.h"
 #include "GPUTimer.h"
 #include "vector_td_utilities.h"
-#include "hoNDArray_fileio.h"
+#include "cuNDArray_fileio.h"
 #include "ismrmrd/xml.h"
 
 namespace Gadgetron{
@@ -174,6 +174,7 @@ namespace Gadgetron{
     boost::shared_ptr< cuNDArray<float_complext> > precon_weights = real_to_complex<float_complext>( _precon_weights.get() );
     _precon_weights.reset();
     D_->set_weights( precon_weights );
+    write_nd_array(precon_weights.get(),"precon_weights.cplx");
     
     //Apply dcw weights
     *device_samples *= *dcw;

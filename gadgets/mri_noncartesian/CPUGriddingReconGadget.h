@@ -51,6 +51,9 @@ namespace Gadgetron{
 
 		float kernelWidth;
 		float oversamplingFactor;
+		double kr_max;
+		std::vector<hoNFFT_plan<float, 2>> plans_;
+		hoNDArray<std::complex<float>> csm_;
 
 		/**
 			Image dimensions
