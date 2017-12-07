@@ -150,7 +150,7 @@ namespace Gadgetron{
       // Calculate gradients 
       calc_vds(smax_,gmax_,sample_time,sample_time,Nints_,&fov_[0],nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
 
-      samples_per_interleave_ = std::min(ngrad,static_cast<int>(m1->getObjectPtr()->number_of_samples));
+      samples_per_interleave_ = m1->getObjectPtr()->number_of_samples;//std::min(ngrad,static_cast<int>(m1->getObjectPtr()->number_of_samples));
       GDEBUG("Using %d samples per interleave\n", samples_per_interleave_);
 
       // Calculate the trajectory and weights

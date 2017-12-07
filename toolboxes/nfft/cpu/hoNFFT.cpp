@@ -267,9 +267,9 @@ namespace Gadgetron{
     template<class Real, unsigned int D>
     void hoNFFT_plan<Real, D>::initialize(){
 		nosf = n;		
-		for(size_t i = 0 i < sizeof(n)/sizeof(n[0]); i++){
+		for(size_t i = 0; i < sizeof(n)/sizeof(n[0]); i++){
 			nosf[i] *= osf;
-			nosf[i] = std::round(nosf[i]/2)*2;
+			nosf[i] = std::round(nosf[i]/2.0)*2.0;
 		}
         kw = wg;
         kwidth = kw/2.0;
@@ -278,22 +278,22 @@ namespace Gadgetron{
         Real tmp = kw/osf*(osf-0.5);
         beta = M_PI*std::sqrt(tmp*tmp-0.8);
 
-        p.create(std::ceil(kosf*kwidth)-1);
+        p.create(std::floor(kosf*kwidth));
 		p.fill(0.0);
-        for(size_t i = 0; i < std::ceil(kosf*kwidth); i++){
+        for(size_t i = 0; i < std::floor(kosf*kwidth); i++){
             Real om = Real(i)/Real(std::ceil(kosf*kwidth));
             p[i] = bessi0(beta*std::sqrt(1-om*om));
         }
-       Real pConst = 1/(kwidth*p[0]);
+       Real pConst = 1/(p[0]);
         for(auto it = p.begin(); it != p.end(); it++)
             *it *= pConst;
-        p[std::ceil(kosf*kwidth)-1] = 0;
-        
+        //p[std::floor(kosf*kwidth)] = 0;
+        write_nd_array(&p,"kern.real");
         // Need to fix to allow for flexibility in dimensions
-        hoNDArray<Real> dax(size_t(nosf[0]));
-		dax.fill(0.0);
+        hoNDArray<Real> dax(nosf[0]);
+		dax.fill(Real(0));
         for(int i = 0; i < nosf[0]; i++){
-            Real x = (i-nosf[0]/2)/n[0];
+            Real x = (i-float(nosf[0])/2.0)/n[0];
             Real tmp = M_PI*M_PI*kw/osf*kw/osf*x*x-beta*beta;
             auto sqa = std::sqrt(complex<Real>(tmp, 0));
             dax[i] = (std::sin(sqa)/sqa).real();
@@ -352,7 +352,7 @@ namespace Gadgetron{
     {
         switch(D){
             case 1:{
-                m.fill(0);
+				d.fill(std::complex<float>(0.0,0.0));
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     for(int lx = -kwidth; lx < kwidth+1; lx++){
                         Real nxt = std::round(nx[i]+lx);
@@ -361,30 +361,32 @@ namespace Gadgetron{
                             std::floor(kosf*kwidth-1)
                         );
                         Real kwx = p[kkx];
-                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
+                        nxt = std::max(nxt, Real(0)); nxt = std::min((size_t)nxt, nosf[0]-1);
                         d[i] += m[(size_t)nxt]*kwx;
+                        
                     }
                 }
                 break;                
             }
             case 2:{
-                d.fill(0);
+                d.fill(std::complex<float>(0.0,0.0));
 				write_nd_array(&m,"m.cplx");
 				write_nd_array(&nx,"nx.real");
 				write_nd_array(&ny,"ny.real");
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
-                    for(int lx = -kwidth; lx <= kwidth; lx++){
-                        for(int ly = -kwidth; ly <= kwidth; ly++){
+					float kern_weight = 0;
+                    for(float lx = -kwidth; lx < kwidth+1; lx++){
+                        for(float ly = -kwidth; ly < kwidth+1; ly++){
                             Real nxt = std::round(nx[i]+lx);
                             Real nyt = std::round(ny[i]+ly);
 
                             Real kkx = std::min(
                                 std::round(kosf*std::abs(nx[i]-nxt)),
-                                std::floor(kosf*kwidth)
+                                std::floor(kosf*kwidth-1)
                             );
                             Real kky = std::min(
                                 std::round(kosf*std::abs(ny[i]-nyt)),
-                                std::floor(kosf*kwidth)
+                                std::floor(kosf*kwidth-1)
                             );
                             Real kwx = p[kkx]; Real kwy = p[kky];
 
@@ -392,13 +394,16 @@ namespace Gadgetron{
                             //nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, osf*n[1]-1);
 							if(nxt >= 0 && nyt >=0 && nxt <= nosf[0]-1 && nyt <= nosf[1]-1)
                             	d[i] += m[(size_t)(nxt+nyt*nosf[1])]*kwx*kwy;
+                            	kern_weight += kwx*kwy;
+                            //if(i==0){std::cout << d[0] << std::endl;}
                         }
                     }
+                    d[i] /= kern_weight;
                 }
                 break;
             }
             case 3:{
-                m.fill(0);
+                d.fill(std::complex<float>(0.0,0.0));
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     for(int lx = -kwidth; lx < kwidth+1; lx++){
                         for(int ly = -kwidth; ly < kwidth+1; ly++){
@@ -450,7 +455,7 @@ namespace Gadgetron{
     {
         switch(D){
             case 1:{
-                m.fill(0);
+                m.fill(std::complex<float>(0.0,0.0));;
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     ComplexType dw = d[i];
                     for(int lx = -kwidth; lx < kwidth+1; lx++){
@@ -460,7 +465,7 @@ namespace Gadgetron{
                             std::floor(kosf*kwidth)
                         );
                         Real kwx = p[kkx];
-                        nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
+                        nxt = std::max(nxt, Real(0)); nxt = std::min((size_t)nxt, nosf[0]-1);
                         m[(size_t)nxt] += dw*kwx;
                     }
                 }
@@ -470,28 +475,26 @@ namespace Gadgetron{
                 break;
             }
             case 2:{
-                m.fill(0);
+                m.fill(std::complex<float>(0.0,0.0));
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     ComplexType dw = d[i];
-                    for(int lx = -kwidth; lx <= kwidth; lx++){
-                        for(int ly = -kwidth; ly <= kwidth; ly++){
+                    for(float lx = -kwidth; lx < kwidth+1; lx++){
+                        for(float ly = -kwidth; ly < kwidth+1; ly++){
                             Real nxt = std::round(nx[i]+lx);
                             Real nyt = std::round(ny[i]+ly);
 
                             Real kkx = std::min(
                                 std::round(kosf*std::abs(nx[i]-nxt)),
-                                std::floor(kosf*kwidth)
+                                std::floor(kosf*kwidth-1)
                             );
                             Real kky = std::min(
                                 std::round(kosf*std::abs(ny[i]-nyt)),
-                                std::floor(kosf*kwidth)
+                                std::floor(kosf*kwidth-1)
                             );
                             Real kwx = p[kkx]; Real kwy = p[kky];
 
-                            nxt = std::max(nxt, Real(0)); nxt = std::min(nxt, nosf[0]-1);
-                            nyt = std::max(nyt, Real(0)); nyt = std::min(nyt, nosf[1]-1);
-
-                            m[(size_t)(nxt+nyt*nosf[1])] += dw*kwx*kwy;
+                            if(nxt >= 0 && nyt >=0 && nxt <= nosf[0]-1 && nyt <= nosf[1]-1)
+								m[(size_t)(nxt+nyt*nosf[1])] += dw*kwx*kwy;
                         }
                     }
 
@@ -505,7 +508,7 @@ namespace Gadgetron{
                 break;
             }
             case 3:{
-                m.fill(0);
+                m.fill(std::complex<float>(0.0,0.0));
                 for(size_t i = 0; i < k.get_number_of_elements(); i++){
                     ComplexType dw = d[i];
                     for(int lx = -kwidth; lx < kwidth+1; lx++){

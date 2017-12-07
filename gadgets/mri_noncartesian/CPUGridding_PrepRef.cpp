@@ -24,7 +24,7 @@ namespace Gadgetron{
 		ISMRMRD::IsmrmrdHeader h;
 		deserialize(mb->rd_ptr(), h);
 		acceleration_factor = h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1;
-		if(acceleration_factor != 4){ acceleration_factor = 4; }
+		if(acceleration_factor != 3){ acceleration_factor = 3; }
 		process_called_times_ = 0;
 		prepared_ = false;
 		return GADGET_OK;

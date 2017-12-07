@@ -32,6 +32,22 @@ namespace Gadgetron{
 		
 		imageDimsOs.push_back(matrixSize.x*oversamplingFactor);
 		imageDimsOs.push_back(matrixSize.y*oversamplingFactor);
+		
+		ISMRMRD::TrajectoryDescription traj_desc;
+		if (h.encoding[0].trajectoryDescription) {
+			traj_desc = *h.encoding[0].trajectoryDescription;
+	    }else {
+			GDEBUG("Trajectory description missing");
+			return GADGET_FAIL;
+		}
+	
+		for (std::vector<ISMRMRD::UserParameterDouble>::iterator i (traj_desc.userParameterDouble.begin()); i != traj_desc.userParameterDouble.end(); ++i) {
+			if (i->name == "krmax_per_cm") {
+				kr_max= i->value;
+			} else {
+				GDEBUG("WARNING: unused trajectory parameter %s found\n", i->name.c_str());
+			}
+		}
 
 		return GADGET_OK;
 	}
@@ -64,7 +80,6 @@ namespace Gadgetron{
 			std::vector<size_t> newOrder = {0, 1, 2, 4, 5, 6, 3};
 			auto permuted = permute((hoNDArray<std::complex<float>>*)&buffer->data_,&newOrder);
 			hoNDArray<std::complex<float>> data(*permuted);
-			hoNDArray<std::complex<float>> csm_;
 			if(recon_bit_->rbit_[e].ref_ && !csm_.get_number_of_elements()){
 				csm_ = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
 			}
@@ -98,18 +113,20 @@ namespace Gadgetron{
 		size_t nCoils
 	){
 
-		write_nd_array(traj,"traj.real");
-		write_nd_array(dcw,"dcw.real");
-		write_nd_array(data,"data.cplx");
-		std::vector<hoNFFT_plan<float, 2>> plans_;
-		for(int p = 0; p < nCoils; p++){
-			hoNFFT_plan<float, 2> plan(
-				from_std_vector<size_t, 2>(imageDims),
-				oversamplingFactor,
-				kernelWidth
-			);
-			plan.preprocess(*traj);
-			plans_.push_back(plan);
+		//write_nd_array(traj,"traj.real");
+		//write_nd_array(dcw,"dcw.real");
+		//write_nd_array(data,"data.cplx");
+		//std::vector<hoNFFT_plan<float, 2>> plans_;
+		if(plans_.size() < nCoils){
+			for(int p = 0; p < nCoils; p++){
+				hoNFFT_plan<float, 2> plan(
+					from_std_vector<size_t, 2>(imageDims),
+					oversamplingFactor,
+					kernelWidth
+				);
+				plan.preprocess(*traj);
+				plans_.push_back(plan);
+			}
 		}
 		hoNDArray<std::complex<float>> arg(imageDimsOs);
 		arg.create(imageDimsOs[0], imageDimsOs[1]);
@@ -123,7 +140,7 @@ namespace Gadgetron{
 		hoNDArray<float> empty_dcw;
 		int i;
 		if(!iterate.value()){
-			#pragma omp parallel for shared(plans_, traj,dcw,channelRecon,data) num_threads(nCoils)
+			#pragma omp parallel for shared(traj,dcw,channelRecon,data) num_threads(nCoils)
 			for(i = 0; i < nCoils; ++i){
 				hoNDArray<std::complex<float>> tmp(imageDimsOs);
 				tmp.create(imageDimsOs[0], imageDimsOs[1]);
@@ -145,19 +162,21 @@ namespace Gadgetron{
 ///First step
 			std::vector<size_t> flat_dim = {imageDimsOs[0]*imageDimsOs[1]};
 			//empty_dcw.fill(1.0);
-			#pragma omp parallel for shared(plans_, traj,dcw,channelRecon,data) num_threads(nCoils)
+			hoNDArray<std::complex<float>> channelData;
+			hoNDArray<std::complex<float>> tmp(imageDimsOs);
+			#pragma omp parallel for shared(traj,dcw,channelRecon,data) private(channelData,tmp) num_threads(nCoils)
 			for(i = 0; i < nCoils; ++i){
-				hoNDArray<std::complex<float>> tmp(imageDimsOs);
+				//hoNDArray<std::complex<float>> tmp(imageDimsOs);
 				tmp.create(imageDimsOs[0], imageDimsOs[1]);
 				tmp.fill(std::complex<float>(0.0,0.0));
-				hoNDArray<std::complex<float>> channelData;
+				//hoNDArray<std::complex<float>> channelData;
 				channelData.create(data->get_number_of_elements()/nCoils);
 				memcpy(channelData.get_data_ptr(), data->begin()+i*(data->get_number_of_elements()/nCoils), sizeof(std::complex<float>)*(data->get_number_of_elements()/nCoils)/data->get_size(4));
-				if(i==0){write_nd_array(&channelData,"channelData0.cplx");}
+				//if(i==0){write_nd_array(&channelData,"channelData0.cplx");}
 				channelData *= *dcw;
 				plans_[i].compute(channelData, tmp, empty_dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C);
 				memcpy(&channelRecon(0,0,i), tmp.get_data_ptr(), sizeof(std::complex<float>)*imageDimsOs[0]*imageDimsOs[1]);
-				write_nd_array(&tmp,"tmp.cplx");
+				//write_nd_array(&tmp,"tmp.cplx");
 			}
 			//Gadgetron::coil_map_2d_Inati(channelRecon,coilMap, 7, 3);
 			//hoNDArray<std::complex<float>> I(coilMap);
@@ -176,6 +195,7 @@ namespace Gadgetron{
 			b.fill(std::complex<float>(0.0,0.0));
 			hoNDArray<std::complex<float>> p(imageDimsOs);
 			p.fill(std::complex<float>(0.0,0.0));
+			//write_nd_array(&p,"p.cplx");
 			for(int i =0; i < p.get_number_of_elements(); i++){
 				for(int j = 0; j < nCoils; j++){
 					p[i] += channelRecon[j*p.get_number_of_elements()+i];
@@ -207,29 +227,31 @@ namespace Gadgetron{
 				channelRecon.create(imageDimsOs[0],imageDimsOs[1],nCoils);
 				channelRecon.fill(std::complex<float>(0.0,0.0));
 				write_nd_array(&p,"p.cplx");
-				#pragma omp parallel for shared(channelRecon,plans_) num_threads(nCoils)
+				int j;
+				#pragma omp parallel for shared(channelRecon) private(channelData,tmp,j) num_threads(nCoils)
 				for(int i = 0; i < nCoils; i++){
-					hoNDArray<std::complex<float>> channelData;
+					//hoNDArray<std::complex<float>> channelData;
 					channelData.create(data->get_number_of_elements()/nCoils);
 					channelData.fill(std::complex<float>(0.0,0.0));
-					hoNDArray<std::complex<float>> tmp(p);
+					tmp = p;
 					hoNDArray<std::complex<float>> coilMap_i = hoNDArray<std::complex<float>>(imageDimsOs[0],imageDimsOs[1], &coilMap(0,0,i));
-					for(int j = 0; j<tmp.get_number_of_elements(); j++){
+					for(j = 0; j<tmp.get_number_of_elements(); j++){
 						tmp[j] *= coilMap_i[j];
 					}
-					write_nd_array(&tmp,"tmp0.cplx");
+					//write_nd_array(&tmp,"tmp0.cplx");
 					plans_[i].compute(tmp, channelData, empty_dcw, hoNFFT_plan<float, 2>::NFFT_FORWARDS_C2NC);
-					if(i==0){write_nd_array(&channelData,"channelData.cplx");}
+					if(i==6){write_nd_array(&coilMap_i,"coilmap.cplx");}
 					channelData *= *dcw;
 					tmp.fill(std::complex<float>(0.0,0.0));
 					/*for(int j = 0; j<channelData.get_number_of_elements(); j++){
 						channelData[j] /= 5.0;
 					}*/
 					plans_[i].compute(channelData, tmp, empty_dcw, hoNFFT_plan<float, 2>::NFFT_BACKWARDS_NC2C);
-					write_nd_array(&tmp,"tmp.cplx");
-					for(int j = 0; j<tmp.get_number_of_elements(); j++){
+					//write_nd_array(&tmp,"tmp.cplx");
+					for(j = 0; j<tmp.get_number_of_elements(); j++){
 						tmp[j] *= conj(coilMap_i[j]);
 					}
+					//write_nd_array(&tmp,"tmp_post.cplx");
 					memcpy(&channelRecon(0,0,i), tmp.get_data_ptr(), sizeof(std::complex<float>)*imageDimsOs[0]*imageDimsOs[1]);
 				}
 				#pragma omp barrier
@@ -247,7 +269,7 @@ namespace Gadgetron{
 						}
 					}
 				}*/
-				write_nd_array(&q,"q.cplx");
+				//write_nd_array(&q,"q.cplx");
 				//std::cout << norm2(q) << std::endl;
 				phq = std::complex<float>(0.0,0.0);
 				for(int i =0; i < q.get_number_of_elements(); i++){
@@ -261,20 +283,29 @@ namespace Gadgetron{
 				}
 				std::complex<float> rhro = rhr;
 				rhr = std::complex<float>(0.0,0.0);
-				write_nd_array(&r,"r0.cplx");
+				//write_nd_array(&r,"r0.cplx");
 				for(int i =0; i < r.get_number_of_elements(); i++){
 					if(real(r[i]) != 0)
 						r[i] -= real(rhro)/real(phq)*q[i];
 						rhr += r[i]*conj(r[i]);
 				}
-				write_nd_array(&p,"p0.cplx");
-				write_nd_array(&r,"r.cplx");
+				//write_nd_array(&p,"p0.cplx");
+				//write_nd_array(&r,"r.cplx");
 				for(int i =0; i < p.get_number_of_elements(); i++){
 					if(real(p[i]) != 0)
 						p[i] = r[i]+real(rhr)/real(rhro)*p[i];
-				}					
-				write_nd_array(&p,"p1.cplx");
+				}
+				//write_nd_array(&p,"p1.cplx");
 			}
+			plans_[0].fft(b, hoNFFT_plan<float, 2>::NFFT_FORWARDS);
+			for(int x = 0; x < b.get_size(0); x++){
+				float kx = (-1+x*2./b.get_size(0));
+				for(int y = 0; y < b.get_size(1); y++){
+					float ky = (-1+y*2./b.get_size(1));
+					b[x+y*b.get_size(0)] *= .5+std::atan(100*(1-std::sqrt(kx*kx+ky*ky)))/M_PI;
+				}
+			}
+			plans_[0].fft(b, hoNFFT_plan<float, 2>::NFFT_BACKWARDS);			
 			return boost::make_shared<hoNDArray<std::complex<float>>>(b);
 		}
 	}	
@@ -330,9 +361,9 @@ namespace Gadgetron{
 		std::vector<size_t> newOrder = {0, 1, 2, 4, 5, 6, 3};
 		refdata = *permute(&refdata,&newOrder);
 		hoNDArray<std::complex<float>> images(imageDimsOs[0], imageDimsOs[1], refdata.get_size(6));	
-		hoNDArray<std::complex<float>> csm_(imageDimsOs[0], imageDimsOs[1], refdata.get_size(6));
+		csm_.create(imageDimsOs[0], imageDimsOs[1], refdata.get_size(6));
 
-		std::vector<hoNFFT_plan<float, 2>> plans_;
+		std::vector<hoNFFT_plan<float, 2>> plans2_;
 		for(int p = 0; p < refdata.get_size(6); p++){
 			hoNFFT_plan<float, 2> plan(
 				from_std_vector<size_t, 2>(imageDims),
@@ -340,16 +371,16 @@ namespace Gadgetron{
 				kernelWidth
 			);
 			plan.preprocess(*refTraj.get());
-			plans_.push_back(plan);
+			plans2_.push_back(plan);
 		}	
 
-		#pragma omp parallel for shared(images,plans_) num_threads(refdata.get_size(6))
+		#pragma omp parallel for shared(images,plans2_) num_threads(refdata.get_size(6))
 		for(int n = 0; n < refdata.get_size(6); n++){
 			hoNDArray<std::complex<float>> cha_data(refdata.get_size(0),refdata.get_size(1),refdata.get_size(2),refdata.get_size(3),refdata.get_size(4),refdata.get_size(5),&refdata(0,0,0,0,0,0,n));		
-			hoNDArray<std::complex<float>> image = *reconstructChannel(&cha_data,refTraj.get(),refDcw.get(),plans_[n]);
+			hoNDArray<std::complex<float>> image = *reconstructChannel(&cha_data,refTraj.get(),refDcw.get(),plans2_[n]);
 			memcpy(&images(0,0,n),image.get_data_ptr(),image.get_number_of_elements()*sizeof(std::complex<float>));
 		}
-		Gadgetron::coil_map_2d_Inati(images,csm_, 7, 3);
+		Gadgetron::coil_map_2d_Inati(images,csm_, 5, 5);
 
 		for(int n = 0; n < refdata.get_size(6); n++){
 			for(int x = 0; x < csm_.get_size(0); x++){
@@ -362,7 +393,7 @@ namespace Gadgetron{
 		}
 
 		Gadgetron::coil_combine(images, csm_, 2, arg);
-		write_nd_array(&arg,"csm.cplx");
+		//write_nd_array(&arg,"csm.cplx");
 		return csm_;
 	}	
 
