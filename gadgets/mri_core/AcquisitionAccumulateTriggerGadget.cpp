@@ -56,7 +56,7 @@ namespace Gadgetron{
       trigger_ = USER_5;
     } else if (trigger_dimension_local.compare("user_6") == 0) {
       trigger_ = USER_6;
-    } else if (trigger_dimension_local.compare("user_7") == 0) {
+    } else if (trigger_dimension_local.compare("sliding_window") == 0) {
       trigger_ = USER_7;
     } else {
       GDEBUG("WARNING: Unknown trigger dimension (%s), trigger condition set to NONE (end of scan)", trigger_dimension_local.c_str());
@@ -290,8 +290,7 @@ namespace Gadgetron{
 	}
 	break;
       case USER_7:
-	if (prev_.head_->getObjectPtr()->idx.user[7] !=
-	    d.head_->getObjectPtr()->idx.user[7]) {
+	if (d.head_->getObjectPtr()->idx.kspace_encode_step_1%sliding_window_size.value() == 0) {
 	  trigger();
 	}
 	break;
