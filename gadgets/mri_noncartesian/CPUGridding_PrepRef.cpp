@@ -24,7 +24,7 @@ namespace Gadgetron{
 		ISMRMRD::IsmrmrdHeader h;
 		deserialize(mb->rd_ptr(), h);
 		acceleration_factor = h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1;
-		if(acceleration_factor != 3){ acceleration_factor = 3; }
+		if(acceleration_factor != 10){ acceleration_factor = 10; }
 		process_called_times_ = 0;
 		prepared_ = false;
 		return GADGET_OK;
@@ -50,8 +50,10 @@ namespace Gadgetron{
 				process_called_times_++;
 
 				if(process_called_times_ == 1){
-					buffer_data.create(R0, E2, CHA, N, S, SLC, acceleration_factor*E1);
-					buffer_traj.create(3, R0, E2, N, S, SLC, acceleration_factor*E1);
+					buffer_data.create(R0, E2, CHA, N, S, SLC, E1);
+					buffer_data.fill(0);
+					buffer_traj.create(3, R0, E2, N, S, SLC, E1);
+					buffer_traj.fill(0);
 					//clear(buffer.trajectory_.get_ptr());
 				}
 
@@ -64,6 +66,8 @@ namespace Gadgetron{
 					ISMRMRD::AcquisitionHeader* acqhdr2 = &recon_bit_->rbit_[e].data_.headers_(l,0,0,0,0);
 					memcpy(&buffer_data(0,0,0,0,0,0,acqhdr2->idx.kspace_encode_step_1),&data_array(0,0,0,0,0,0,l),sizeof(std::complex<float>)*R0*E2*CHA*N*S*SLC);
 					memcpy(&buffer_traj(0,0,0,0,0,0,acqhdr2->idx.kspace_encode_step_1),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*N*S*SLC);
+					//memcpy(&buffer_data(0,0,0,0,0,0,process_called_times_%acceleration_factor),&data_array(0,0,0,0,0,0,l),sizeof(std::complex<float>)*R0*E2*CHA*N*S*SLC);
+					//memcpy(&buffer_traj(0,0,0,0,0,0,process_called_times_%acceleration_factor),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*N*S*SLC);
 				}
 				write_nd_array(&buffer_data,"bufferdata.cplx");
 				write_nd_array(&buffer_traj,"buffertraj.real");

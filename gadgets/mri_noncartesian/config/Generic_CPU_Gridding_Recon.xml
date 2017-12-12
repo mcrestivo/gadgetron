@@ -27,20 +27,21 @@
 	  </gadget>
 
     <!-- Calculate spiral trajectory and attach -->
-<!--<gadget>
+	<gadget>
         <name>SpiralToGeneric</name>
         <dll>gadgetron_spiral</dll>
         <classname>SpiralToGenericGadget</classname>
         <property><name>vdsFactor</name><value>.5</value></property>
     </gadget>
--->    
+   
     <!-- Data accumulation and trigger gadget -->
     <gadget>
         <name>AccTrig</name>
         <dll>gadgetron_mricore</dll>
         <classname>AcquisitionAccumulateTriggerGadget</classname>
-        <property><name>trigger_dimension</name><value>repetition</value></property>
+        <property><name>trigger_dimension</name><value>sliding_window</value></property>
         <property><name>sorting_dimension</name><value></value></property>
+        <property><name>sliding_window_size</name><value>21</value></property>
     </gadget>
 
     <gadget>
@@ -52,7 +53,7 @@
         <property><name>split_slices</name><value>false</value></property>
         <property><name>ignore_segment</name><value>true</value></property>
         <property><name>verbose</name><value>true</value></property>
-    </gadget>S
+    </gadget>
 
     <!-- Calculate spiral trajectory and attach -->
     <gadget>
@@ -67,11 +68,11 @@
         <classname>CPUGriddingReconGadget</classname>
         <property><name>verbose</name><value>true</value></property>	
         <property><name>perform_timing</name><value>true</value></property>
-      	<property><name>kernelWidthProperty</name><value>5</value></property>
-      	<property><name>oversamplingFactorProperty</name><value>1.25</value></property>
+      	<property><name>kernelWidthProperty</name><value>6</vaflue></property>
+      	<property><name>oversamplingFactorProperty</name><value>1.5</value></property>
 	    <property><name>iterate</name><value>true</value></property>
 	    <property><name>iteration_max</name><value>20</value></property>
-	    <property><name>iteration_tol</name><value>1e-4</value></property>
+	    <property><name>iteration_tol</name><value>1e-5</value></property>
 	<!-- Ignore gridding weights, iterate instead -->
 	<!--
 		<property><name>iterateProperty</name><value>true</value></property>

@@ -33,7 +33,7 @@ namespace Gadgetron{
 		imageDimsOs.push_back(matrixSize.x*oversamplingFactor);
 		imageDimsOs.push_back(matrixSize.y*oversamplingFactor);
 		
-		ISMRMRD::TrajectoryDescription traj_desc;
+		/*ISMRMRD::TrajectoryDescription traj_desc;
 		if (h.encoding[0].trajectoryDescription) {
 			traj_desc = *h.encoding[0].trajectoryDescription;
 	    }else {
@@ -47,7 +47,7 @@ namespace Gadgetron{
 			} else {
 				GDEBUG("WARNING: unused trajectory parameter %s found\n", i->name.c_str());
 			}
-		}
+		}*/
 
 		return GADGET_OK;
 	}
@@ -80,12 +80,13 @@ namespace Gadgetron{
 			std::vector<size_t> newOrder = {0, 1, 2, 4, 5, 6, 3};
 			auto permuted = permute((hoNDArray<std::complex<float>>*)&buffer->data_,&newOrder);
 			hoNDArray<std::complex<float>> data(*permuted);
-			if(recon_bit_->rbit_[e].ref_ && !csm_.get_number_of_elements()){
+			if(recon_bit_->rbit_[e].ref_){// && !csm_.get_number_of_elements()){
 				csm_ = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
 			}
 
 			auto image = reconstruct(&data, csm_, traj.get(), dcw.get(), CHA);
 			auto img = *image;
+			//auto img = csm_;
 			hoNDArray<std::complex<float>> finalImage; finalImage.create(imageDims[0], imageDims[1]);
 			
 			// Crop the image
@@ -116,8 +117,8 @@ namespace Gadgetron{
 		//write_nd_array(traj,"traj.real");
 		//write_nd_array(dcw,"dcw.real");
 		//write_nd_array(data,"data.cplx");
-		//std::vector<hoNFFT_plan<float, 2>> plans_;
-		if(plans_.size() < nCoils){
+		std::vector<hoNFFT_plan<float, 2>> plans_;
+		if(true){//plans_.size() < nCoils){
 			for(int p = 0; p < nCoils; p++){
 				hoNFFT_plan<float, 2> plan(
 					from_std_vector<size_t, 2>(imageDims),
@@ -394,7 +395,7 @@ namespace Gadgetron{
 
 		Gadgetron::coil_combine(images, csm_, 2, arg);
 		//write_nd_array(&arg,"csm.cplx");
-		return csm_;
+		return csm_;//images;
 	}	
 
 	GADGET_FACTORY_DECLARE(CPUGriddingReconGadget);

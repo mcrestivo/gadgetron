@@ -27,6 +27,7 @@ namespace Gadgetron{
 
 
     protected:
+	  GADGET_PROPERTY(sliding_window_size, int, "Sliding Window Size", 1);
       GADGET_PROPERTY_LIMITS(trigger_dimension, std::string, "Dimension to trigger on", "",
 			     GadgetPropertyLimitsEnumeration, 
 			     "kspace_encode_step_1",
@@ -46,6 +47,7 @@ namespace Gadgetron{
 			     "user_5",
 			     "user_6",
 			     "user_7",
+			     "sliding_window",
 			     "");
 
       GADGET_PROPERTY_LIMITS(sorting_dimension, std::string, "Dimension to sort by", "", 

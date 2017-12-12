@@ -31,12 +31,17 @@ namespace Gadgetron{
     
     virtual int process(GadgetContainerMessage< ISMRMRD::AcquisitionHeader >* m1,
 			GadgetContainerMessage< hoNDArray< std::complex<float> > > * m2);
+			
+	bool checkAttachedTrajectories(hoNDArray<float> *traj);
     
   private:
     int samples_to_skip_start_;
     int samples_to_skip_end_;
     int samples_per_interleave_;
+    int num_profiles_per_frame_;
+    int num_frames_;
     int interleaves_;
+    int rep_;
     long    Tsamp_ns_;
     long    Nints_;
     long    acceleration_factor_;
@@ -45,6 +50,8 @@ namespace Gadgetron{
     double  krmax_;
     double  fov_[2];
     bool prepared_;
+    bool radial;
+    bool golden_angle;
     
     boost::shared_ptr< hoNDArray<float> > host_traj_;
   };
