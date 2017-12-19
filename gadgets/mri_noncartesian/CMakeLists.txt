@@ -75,6 +75,7 @@ target_link_libraries(gadgetron_mri_noncartesian
     optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
     ${OPTIMIZED_GADGET_LIBS}
     ${Boost_LIBRARIES}
+    ${CUDA_LIBRARIES} 
 
 )
 

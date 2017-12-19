@@ -25,7 +25,11 @@ namespace Gadgetron{
 
   protected:
 	
-	GADGET_PROPERTY(vdsFactor, double, "vds FOV reduction factor", 0.0);
+	GADGET_PROPERTY(vdsFactor, double, "vds FOV reduction factor, 1.0 is no vds", 1.0);
+	GADGET_PROPERTY(radialProfiles, float, "number of radial profiles, if radial", 201.0);
+	GADGET_PROPERTY(goldenAngle, bool, "Use golden angle for calculating trajectories?", false);
+
+
 
     virtual int process_config(ACE_Message_Block* mb);
     
