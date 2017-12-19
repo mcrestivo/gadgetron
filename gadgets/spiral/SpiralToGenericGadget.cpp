@@ -40,6 +40,7 @@ namespace Gadgetron{
   ISMRMRD::TrajectoryDescription traj_desc;
   
   if(h.encoding[0].trajectory == "spiral"){
+	  golden_angle = goldenAngle.value();
 	  radial = false;
 	  if (h.encoding[0].trajectoryDescription) {
 		traj_desc = *h.encoding[0].trajectoryDescription;
@@ -120,9 +121,9 @@ namespace Gadgetron{
   else if(h.encoding[0].trajectory == "radial"){
 	  //num_samples_per_profile
 	  radial = true;
-	  num_profiles_per_frame_ = 201;
+	  num_profiles_per_frame_ = radialProfiles.value();
 	  num_frames_ = 1;
-	  golden_angle = true;
+	  golden_angle = goldenAngle.value();
   }
   else{
 	  GDEBUG("Trajectory in XML header is not set to spiral or radial\n");
@@ -173,6 +174,9 @@ namespace Gadgetron{
 		std::vector<size_t> trajectory_dimensions;
 		trajectory_dimensions.push_back(3);
 		if(radial){Nints_ = num_profiles_per_frame_;}
+		if(!radial && golden_angle){
+				Nints_ = 13;
+		}
 		trajectory_dimensions.push_back(samples_per_interleave_*Nints_);
 
 		host_traj_ = boost::shared_ptr< hoNDArray<float> >(new hoNDArray<float>(&trajectory_dimensions));
@@ -191,10 +195,9 @@ namespace Gadgetron{
 			double sample_time = (1.0*Tsamp_ns_) * 1e-9;
 
 			// Calculate gradients 
-			calc_vds(smax_,gmax_,sample_time,sample_time,Nints_,&fov_[0],nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
+			calc_vds(smax_,gmax_,sample_time,sample_time,interleaves_,&fov_[0],nfov,krmax_,ngmax,&xgrad,&ygrad,&ngrad);
 
 			// Calculate the trajectory and weights
-			//Nints_ = 13;
 			calc_traj(xgrad, ygrad, samples_per_interleave_, Nints_, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
 
 			{

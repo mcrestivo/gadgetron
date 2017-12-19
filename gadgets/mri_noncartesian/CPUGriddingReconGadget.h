@@ -11,6 +11,7 @@
 #include "gadgetron_mri_noncartesian_export.h"
 #include "hoNDArray.h"
 #include "hoNFFT.h"
+#include "cuNFFT.h"
 
 namespace Gadgetron{
 
@@ -53,7 +54,9 @@ namespace Gadgetron{
 		float oversamplingFactor;
 		double kr_max;
 		std::vector<hoNFFT_plan<float, 2>> plans_;
-		hoNDArray<std::complex<float>> csm_;
+		bool ref_plan_prepared;
+		cuNFFT_plan<float,2> nfft_plan_;
+		//hoNDArray<std::complex<float>>csm_host_;
 
 		/**
 			Image dimensions
@@ -107,7 +110,7 @@ namespace Gadgetron{
 			hoNDArray<float> *dcwTraj
 		);
 
-		hoNDArray<std::complex<float>> computeCsm(
+		std::tuple<hoNDArray<std::complex<float>>, hoNDArray<std::complex<float>>> computeCsm(
 			IsmrmrdDataBuffered *ref_
 		);
 	};

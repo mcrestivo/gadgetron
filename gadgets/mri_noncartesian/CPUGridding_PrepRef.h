@@ -39,7 +39,7 @@ namespace Gadgetron{
 			Gadget properties declaration
 		*/
 
-		//GADGET_PROPERTY(kernelWidthProperty, float, "Kernel width", 5.5);
+		GADGET_PROPERTY(accelerationFactor, float, "Undersampling factor for buffering fully sampled frame", 0.0);
 
 		/**
 			Storage for the properties above

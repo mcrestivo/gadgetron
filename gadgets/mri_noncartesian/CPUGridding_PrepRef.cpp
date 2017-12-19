@@ -24,7 +24,7 @@ namespace Gadgetron{
 		ISMRMRD::IsmrmrdHeader h;
 		deserialize(mb->rd_ptr(), h);
 		acceleration_factor = h.encoding[0].parallelImaging->accelerationFactor.kspace_encoding_step_1;
-		if(acceleration_factor != 10){ acceleration_factor = 10; }
+		if(accelerationFactor.value()){ acceleration_factor = accelerationFactor.value(); }
 		process_called_times_ = 0;
 		prepared_ = false;
 		return GADGET_OK;
@@ -50,9 +50,9 @@ namespace Gadgetron{
 				process_called_times_++;
 
 				if(process_called_times_ == 1){
-					buffer_data.create(R0, E2, CHA, N, S, SLC, E1);
+					buffer_data.create(R0, E2, CHA, N, S, SLC, acceleration_factor*E1);
 					buffer_data.fill(0);
-					buffer_traj.create(3, R0, E2, N, S, SLC, E1);
+					buffer_traj.create(3, R0, E2, N, S, SLC, acceleration_factor*E1);
 					buffer_traj.fill(0);
 					//clear(buffer.trajectory_.get_ptr());
 				}
@@ -72,7 +72,7 @@ namespace Gadgetron{
 				write_nd_array(&buffer_data,"bufferdata.cplx");
 				write_nd_array(&buffer_traj,"buffertraj.real");
 
-				if(process_called_times_ > acceleration_factor){
+				if(process_called_times_ >= acceleration_factor){
 					prepared_ = true;
 				}
 			}
