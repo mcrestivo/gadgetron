@@ -1933,9 +1933,10 @@ int main(int argc, char **argv)
 		  }
 		}
 
-		    /*if (compression_precision > 0 || compression_tolerance > 0.0) {
+		    if (compression_precision > 0 || compression_tolerance > 0.0) {
 		        std::cout << "Compression ratio: " << con.compression_ratio() << std::endl;
-				if(use_zfp_compression){
+			}
+				/*if(use_zfp_compression){
 					  std::ofstream myfile;
 					  myfile.open ("CR_ZPP.txt", std::ios_base::app);
 					  myfile << std::to_string(con.compression_ratio()) + ", ";
