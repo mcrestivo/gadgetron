@@ -39,7 +39,7 @@ namespace Gadgetron{
 			Gadget properties declaration
 		*/
 
-		GADGET_PROPERTY(accelerationFactor, float, "Undersampling factor for buffering fully sampled frame", 0.0);
+		GADGET_PROPERTY(accelerationFactor, float, "Undersampling factor for buffering fully sampled frame", 1.0);
 
 		/**
 			Storage for the properties above

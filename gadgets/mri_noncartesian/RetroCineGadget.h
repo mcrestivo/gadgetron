@@ -35,6 +35,14 @@ namespace Gadgetron{
 	
 	protected:
 		
+		hoNDArray<std::complex<float>> data_out;
+		hoNDArray<float> traj_out;
+		hoNDArray<ISMRMRD::AcquisitionHeader> headers_out;
+		
+		float num_phases;
+		float num_segments;
+		
+		hoNDArray<std::complex<float>> Interpolate(std::complex<float>* data1, std::complex<float>* data2, float start_phase, float end_phase, float interp_phase, size_t samples);
 
 		virtual int process_config(ACE_Message_Block *mb);
 		virtual int process(GadgetContainerMessage <IsmrmrdReconData> *m1);

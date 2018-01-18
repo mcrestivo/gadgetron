@@ -19,11 +19,13 @@
 #include "cuCgSolver.h"
 #include "cuCgPreconditioner.h"
 #include "cuNFFT.h"
+#include "cuNDArray_fileio.h"
 #include "cuImageOperator.h"
 #include "sense_utilities.h"
 #include "b1_map.h"
 #include <time.h>
 #include <numeric>
+#include "cudaDeviceManager.h"
 
 namespace Gadgetron{
 	CPUGriddingReconGadget::CPUGriddingReconGadget(){}
@@ -43,15 +45,17 @@ namespace Gadgetron{
 		imageDims.push_back(matrixSize.y);
 		
 		cudaDeviceProp deviceProp;
-		if( cudaGetDeviceProperties( &deviceProp, 0 ) != cudaSuccess) {
+		if( cudaGetDeviceProperties( &deviceProp, 0 ) == cudaSuccess) {
 			unsigned int warp_size = deviceProp.warpSize;   
-			imageDimsOs.push_back((((std::ceil(matrixSize.x*oversamplingFactor))+warp_size-1)/warp_size)*warp_size);
-			imageDimsOs.push_back((((std::ceil(matrixSize.y*oversamplingFactor))+warp_size-1)/warp_size)*warp_size);				
+			imageDimsOs.push_back(std::ceil((matrixSize.x*oversamplingFactor+warp_size-1)/warp_size)*warp_size);
+			imageDimsOs.push_back(std::ceil((matrixSize.y*oversamplingFactor+warp_size-1)/warp_size)*warp_size);				
+			
 		}
 		else{
 			imageDimsOs.push_back(matrixSize.x*oversamplingFactor);
 			imageDimsOs.push_back(matrixSize.y*oversamplingFactor);
 		}
+		
 		
 		ref_plan_prepared = false;
 		/*ISMRMRD::TrajectoryDescription traj_desc;
@@ -77,6 +81,7 @@ namespace Gadgetron{
 		IsmrmrdReconData *recon_bit_ = m1->getObjectPtr();
 		process_called_times_++;
 		for(size_t e = 0; e < recon_bit_->rbit_.size(); e++){
+					
 			IsmrmrdDataBuffered* buffer;
 			if(true){
 				buffer = &(recon_bit_->rbit_[e].data_);
@@ -93,8 +98,12 @@ namespace Gadgetron{
 			size_t S = buffer->data_.get_size(5);
 			size_t SLC = buffer->data_.get_size(6);
 
-			imarray.data_.create(imageDims[0], imageDims[1], 1, 1, N, S, SLC);			
-
+			imarray.data_.create(imageDims[0], imageDims[1], 1, 1, N, S, SLC);	
+			
+			auto ref_images = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
+			hoNDArray<std::complex<float>> csm_host_ = std::get<0>(ref_images);
+			hoNDArray<std::complex<float>> reg_host_ = std::get<1>(ref_images);	
+			
 			auto &trajectory = *buffer->trajectory_;
 			auto trajDcw = separateDcwAndTraj(&trajectory);
 
@@ -103,22 +112,15 @@ namespace Gadgetron{
 			boost::shared_ptr<hoNDArray<floatd2>> traj_host_ = 
 				boost::make_shared<hoNDArray<floatd2>>(std::get<0>(trajDcw).get());
 			
-			std::vector<size_t> newOrder = {0, 1, 2, 3, 4, 5, 6};
-			boost::shared_ptr<hoNDArray<float_complext>> permuted = permute((hoNDArray<float_complext>*)&buffer->data_,&newOrder);
-			boost::shared_ptr<hoNDArray<float_complext>> data(new hoNDArray<float_complext>( permuted.get() ));
 			//if(recon_bit_->rbit_[e].ref_){// && !csm_.get_number_of_elements()){
 				//auto ref_images = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
 			//}
-			auto ref_images = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
-			hoNDArray<std::complex<float>> csm_host_ = std::get<0>(ref_images);
-			hoNDArray<std::complex<float>> reg_host_ = std::get<1>(ref_images);
 			
 			boost::shared_ptr<hoNDArray<float_complext>> csm_host_ptr(new hoNDArray<float_complext>( (hoNDArray<float_complext>*)&csm_host_ ));
 			boost::shared_ptr<hoNDArray<float_complext>> reg_host_ptr(new hoNDArray<float_complext>( (hoNDArray<float_complext>*)&reg_host_ ));
 			boost::shared_ptr< cuNDArray<floatd2> > traj(new cuNDArray<floatd2> ( traj_host_.get() ));
 			boost::shared_ptr< cuNDArray<float> > dcw(new cuNDArray<float> ( dcw_host_.get() ));
 			boost::shared_ptr< cuNDArray<float_complext> > csm(new cuNDArray<float_complext> ( csm_host_ptr.get() ));
-			boost::shared_ptr< cuNDArray<float_complext> >device_samples(new cuNDArray<float_complext> ( data.get() ));
 			boost::shared_ptr< cuNDArray<float_complext> >device_image(new cuNDArray<float_complext> ( &imageDims ));
 
 			cuCgSolver<float_complext> cg_;
@@ -145,8 +147,9 @@ namespace Gadgetron{
 			_precon_weights.reset();
 			D_->set_weights( precon_weights );
 
-    
+	
 			// Setup solver
+			
 			cg_.set_encoding_operator( E_ );        // encoding matrix
 			cg_.add_regularization_operator( R_ );  // regularization matrix
 			cg_.set_preconditioner( D_ );           // preconditioning matrix
@@ -155,21 +158,39 @@ namespace Gadgetron{
 			cg_.set_output_mode( (true) ? cuCgSolver<float_complext>::OUTPUT_VERBOSE : cuCgSolver<float_complext>::OUTPUT_SILENT);
 			
 			E_->set_domain_dimensions(&imageDims);
-			E_->set_codomain_dimensions(device_samples->get_dimensions().get());
 			E_->set_dcw( dcw );
 			E_->set_csm( csm );
 			E_->setup( uint64d2( imageDims[0], imageDims[1] ), uint64d2( imageDimsOs[0], imageDimsOs[1] ), kernelWidth );
 			E_->preprocess(traj.get());
+			hoNDArray<float_complext> host_image;
 			
-			*device_samples *= *dcw;
-			device_image = cg_.solve(device_samples.get());
-			//E_->mult_MH( device_samples.get(), device_image.get());
+			hoNDArray<float_complext> data_n(RO,E1,E2,CHA,1,S,SLC);
+			data_n.fill(0);
+			//std::vector<size_t> newOrder = {0, 1, 2, 3, 4, 5, 6};
+			//boost::shared_ptr<hoNDArray<float_complext>> permuted = permute((hoNDArray<float_complext>*)&data_n,&newOrder);
+			//boost::shared_ptr<hoNDArray<float_complext>> data(new hoNDArray<float_complext>( permuted.get() ));
+			memcpy(&data_n[0],&buffer->data_(0,0,0,0,0,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
+			cuNDArray<float_complext> device_samples((hoNDArray<float_complext>*)&data_n );
+			E_->set_codomain_dimensions(device_samples.get_dimensions().get());
+			device_samples *= *dcw;
+			device_image = cg_.solve(&device_samples);
+			host_image = *device_image->to_host();
 			
-			auto host_image = *device_image->to_host();
+			for(size_t n = 0; n < recon_bit_->rbit_[e].data_.data_.get_size(4); n++){	
+				std::cout << n << std::endl;
+				memcpy(&data_n[0],&buffer->data_(0,0,0,0,n,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
+				//write_nd_array(&data_n,"data_n.cplx");
+				device_samples = data_n;
+				device_samples *= *dcw;
+				device_image = cg_.solve(&device_samples);
+				//E_->mult_MH( device_samples.get(), device_image.get());
+				host_image = *device_image->to_host();
+				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
 
-			memcpy(imarray.data_.get_data_ptr(), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
+			}
 			this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 			this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);		
+			
 		}
 
 		m1->release();
@@ -426,7 +447,17 @@ namespace Gadgetron{
 		//argOs_.fill(std::complex<float>(0.0,0.0));
 		hoNDArray<std::complex<float>> arg_(imageDims);
 
-		hoNDArray<std::complex<float>> refdata = ref_->data_;
+		size_t RO = ref_->data_.get_size(0);
+		size_t E1 = ref_->data_.get_size(1);
+		size_t E2 = ref_->data_.get_size(2);
+		size_t CHA = ref_->data_.get_size(3);
+		size_t N = ref_->data_.get_size(4);
+		size_t S = ref_->data_.get_size(5);
+		size_t SLC = ref_->data_.get_size(6);
+		
+		hoNDArray<std::complex<float>> refdata(RO,E1,E2,CHA,1,S,SLC);
+		memcpy(&refdata[0],&ref_->data_(0,0,0,0,0,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
+		
 		hoNDArray<float> &refTrajectory = *ref_->trajectory_;
 		std::tuple<boost::shared_ptr<hoNDArray<floatd2>>, boost::shared_ptr<hoNDArray<float>>> refTrajDcw = separateDcwAndTraj(&refTrajectory);
 
@@ -466,6 +497,8 @@ namespace Gadgetron{
 		boost::shared_ptr< cuNDArray<float_complext> >device_samples(new cuNDArray<float_complext> ( (hoNDArray<float_complext>*)&refdata ));
 		boost::shared_ptr< cuNDArray<float_complext> >device_images(new cuNDArray<float_complext> ( imageDims[0], imageDims[1], refdata.get_size(6) ));
 		boost::shared_ptr< cuNDArray<float_complext> >device_image(new cuNDArray<float_complext> ( imageDims[0], imageDims[1] ));
+		
+		write_nd_array(traj.get(),"traj.real");
 		
 		if(!ref_plan_prepared){
 			nfft_plan_.setup( from_std_vector<size_t,2>(imageDims), from_std_vector<size_t,2>(imageDimsOs), kernelWidth );

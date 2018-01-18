@@ -52,7 +52,7 @@ namespace Gadgetron{
 				if(process_called_times_ == 1){
 					buffer_data.create(R0, E2, CHA, N, S, SLC, acceleration_factor*E1);
 					buffer_data.fill(0);
-					buffer_traj.create(3, R0, E2, N, S, SLC, acceleration_factor*E1);
+					buffer_traj.create(3, R0, E2, 1, S, SLC, acceleration_factor*E1);
 					buffer_traj.fill(0);
 					//clear(buffer.trajectory_.get_ptr());
 				}
@@ -65,7 +65,7 @@ namespace Gadgetron{
 				for(int l = 0; l < E1; l++){
 					ISMRMRD::AcquisitionHeader* acqhdr2 = &recon_bit_->rbit_[e].data_.headers_(l,0,0,0,0);
 					memcpy(&buffer_data(0,0,0,0,0,0,acqhdr2->idx.kspace_encode_step_1),&data_array(0,0,0,0,0,0,l),sizeof(std::complex<float>)*R0*E2*CHA*N*S*SLC);
-					memcpy(&buffer_traj(0,0,0,0,0,0,acqhdr2->idx.kspace_encode_step_1),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*N*S*SLC);
+					memcpy(&buffer_traj(0,0,0,0,0,0,acqhdr2->idx.kspace_encode_step_1),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*S*SLC);
 					//memcpy(&buffer_data(0,0,0,0,0,0,process_called_times_%acceleration_factor),&data_array(0,0,0,0,0,0,l),sizeof(std::complex<float>)*R0*E2*CHA*N*S*SLC);
 					//memcpy(&buffer_traj(0,0,0,0,0,0,process_called_times_%acceleration_factor),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*N*S*SLC);
 				}

@@ -32,16 +32,19 @@ include_directories(
 )   
 
 set( gadgetron_mri_noncartesian_header_files
+  RetroCineGadget.h
   GriddingReconGadget.h
   CPUGriddingReconGadget.h
   CPUGridding_PrepRef.h)
 
 set( gadgetron_mri_noncartesian_src_files
+  RetroCineGadget.cpp
   GriddingReconGadget.cpp
   CPUGriddingReconGadget.cpp
   CPUGridding_PrepRef.cpp) 
 
 set( gadgetron_mri_noncartesian_config_files
+	config/RetroGatedSpiralCine.xml
 	config/Generic_CPU_Gridding_Recon.xml
   config/Generic_Spiral.xml
   config/Generic_Spiral_SNR.xml)
