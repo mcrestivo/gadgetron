@@ -83,7 +83,7 @@ namespace Gadgetron{
 		for(size_t e = 0; e < recon_bit_->rbit_.size(); e++){
 					
 			IsmrmrdDataBuffered* buffer;
-			if(true){
+			if(false){
 				buffer = &(recon_bit_->rbit_[e].data_);
 			}else{
 				buffer = (IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_);
