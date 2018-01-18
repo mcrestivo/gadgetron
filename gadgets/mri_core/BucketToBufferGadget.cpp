@@ -802,8 +802,8 @@ namespace Gadgetron{
         }
     }
 
-	//std::set<short unsigned int>::iterator e1_it = stats.kspace_encode_step_1.find(acqhdr.idx.kspace_encode_step_1);
-	//e1 = std::distance(stats.kspace_encode_step_1.begin(),e1_it);
+	std::set<short unsigned int>::iterator e1_it = stats.kspace_encode_step_1.find(acqhdr.idx.kspace_encode_step_1);
+	e1 = std::distance(stats.kspace_encode_step_1.begin(),e1_it);
 
     std::complex<float>* pData = &dataBuffer.data_(offset, e1, e2, 0, NUsed, SUsed, slice_loc);
 
