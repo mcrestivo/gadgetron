@@ -50,9 +50,9 @@ namespace Gadgetron{
 				process_called_times_++;
 
 				if(process_called_times_ == 1){
-					buffer_data.create(R0, E2, CHA, N, S, SLC, acceleration_factor*E1);
+					buffer_data.create(R0, E2, CHA, N, S, SLC, E1);
 					buffer_data.fill(0);
-					buffer_traj.create(3, R0, E2, 1, S, SLC, acceleration_factor*E1);
+					buffer_traj.create(3, R0, E2, 1, S, SLC, E1);
 					buffer_traj.fill(0);
 					//clear(buffer.trajectory_.get_ptr());
 				}

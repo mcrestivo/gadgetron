@@ -30,7 +30,8 @@ namespace Gadgetron{
                 i != h.userParameters->userParameterLong.end(); i++)
             {
                     if (i->name == "RetroGatedImages") {
-                        num_phases = i->value;
+                        //num_phases = i->value;
+                        num_phases = 40;
                     } else if (i->name == "RetroGatedSegmentSize") {
                         num_segments = i->value;
                     } else {
