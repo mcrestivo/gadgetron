@@ -113,7 +113,7 @@
         <property><name>min_intensity</name><value>0</value></property>
         <property><name>intensity_offset</name><value>0</value></property>
     </gadget>
-    -->
+-->    
     <gadget>
         <name>ImageFinish</name>
         <dll>gadgetron_mricore</dll>
