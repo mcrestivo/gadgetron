@@ -30,8 +30,8 @@ namespace Gadgetron{
                 i != h.userParameters->userParameterLong.end(); i++)
             {
                     if (i->name == "RetroGatedImages") {
-                        //num_phases = i->value;
-                        num_phases = 40;
+                        num_phases = i->value;
+                        //num_phases = 50;
                     } else if (i->name == "RetroGatedSegmentSize") {
                         num_segments = i->value;
                     } else {
@@ -92,15 +92,13 @@ namespace Gadgetron{
 				
 				size_t k = k_lines[s];
 				//Get physio times and convert to ratio
-				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,N-1,0,0);
-				int count = 1;
-				while(acqhdr->acquisition_time_stamp == 0){
-					count++;
-					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,N-count,0,0);
+				float cpt_max = 0.0;
+				for(size_t n=0; n<N; n++){
+					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,n,0,0);
+					if(acqhdr->physiology_time_stamp[0] > cpt_max){
+						cpt_max = acqhdr->physiology_time_stamp[0];
+					}
 				}
-				float cpt_max = acqhdr->acquisition_time_stamp;
-				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,0,0,0);
-				cpt_max -= acqhdr->acquisition_time_stamp - acqhdr->physiology_time_stamp[0];
 				for(size_t n=0; n<N; n++){
 					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,n,0,0);
 					if(acqhdr->acquisition_time_stamp != 0){
@@ -170,7 +168,7 @@ namespace Gadgetron{
 			}
 
 			//Pass data downstream
-			if(acqhdr->idx.kspace_encode_step_1+1 == E1){
+			if(acqhdr->idx.kspace_encode_step_1+1 == E1 || acqhdr->idx.kspace_encode_step_1 == 0){
 				recon_bit_->rbit_[e].data_.data_ = data_out;
 				recon_bit_->rbit_[e].data_.trajectory_ = traj_out;
 				recon_bit_->rbit_[e].data_.headers_ = headers_out;
