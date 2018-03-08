@@ -172,18 +172,18 @@ namespace Gadgetron{
 			memcpy(&data_n[0],&buffer->data_(0,0,0,0,0,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
 			cuNDArray<float_complext> device_samples((hoNDArray<float_complext>*)&data_n );
 			E_->set_codomain_dimensions(device_samples.get_dimensions().get());
-			device_samples *= *dcw;
-			device_image = cg_.solve(&device_samples);
-			host_image = *device_image->to_host();
+			//device_samples *= *dcw;
+			//device_image = cg_.solve(&device_samples);
+			//host_image = *device_image->to_host();
 			
 			for(size_t n = 0; n < recon_bit_->rbit_[e].data_.data_.get_size(4); n++){	
 				std::cout << n << std::endl;
 				memcpy(&data_n[0],&buffer->data_(0,0,0,0,n,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
 				//write_nd_array(&data_n,"data_n.cplx");
 				device_samples = data_n;
-				device_samples *= *dcw;
+				//device_samples *= *dcw;
 				device_image = cg_.solve(&device_samples);
-				//E_->mult_MH( device_samples.get(), device_image.get());
+				//E_->mult_MH( &device_samples, device_image.get());
 				host_image = *device_image->to_host();
 				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
 

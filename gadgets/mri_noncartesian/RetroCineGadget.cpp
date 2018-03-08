@@ -54,6 +54,9 @@ namespace Gadgetron{
 		for(size_t e = 0; e < recon_bit_->rbit_.size(); e++){
 			hoNDArray<std::complex<float>> data_array = recon_bit_->rbit_[e].data_.data_;
 			hoNDArray<float> traj_array = *recon_bit_->rbit_[e].data_.trajectory_;
+			
+			//bitreversed_order = {0 8 4 12 2 10 6 14 1 9 5 13 3 11 6 15}
+			std::vector<int> bitreversed_order = {0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 12, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 17, 7, 23, 13, 31};
 
 			size_t R0 = data_array.get_size(0);
 			size_t E1 = data_array.get_size(1);
@@ -99,10 +102,11 @@ namespace Gadgetron{
 						cpt_max = acqhdr->physiology_time_stamp[0];
 					}
 				}
+				cpt_ratio.clear();
 				for(size_t n=0; n<N; n++){
 					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,n,0,0);
 					if(acqhdr->acquisition_time_stamp != 0){
-						cpt_ratio.push_back(acqhdr->physiology_time_stamp[0]/cpt_max);
+						cpt_ratio.push_back((acqhdr->physiology_time_stamp[0])/cpt_max);
 					}else{
 						cpt_ratio.push_back(-1);
 					}					
@@ -115,7 +119,9 @@ namespace Gadgetron{
 					int end_ind = -1;
 					float start_time_diff = 1;
 					float end_time_diff = 1;
-					float curr_recon_phase = recon_times_ratio[p];
+					float curr_recon_phase = recon_times_ratio[p];//+bitreversed_order[k]*.017/3;
+					
+					if(curr_recon_phase > 1.0) curr_recon_phase -= 1.0;
 					
 					//Iterate over phases
 					for(size_t n=0; n<N; n++){	
@@ -163,14 +169,18 @@ namespace Gadgetron{
 				}
 				
 				auto traj = *recon_bit_->rbit_[e].data_.trajectory_;
-				memcpy(&traj_out(0,0,k,0,0,0,0),&traj[3*R0*k],sizeof(float)*R0*3);						
+				memcpy(&traj_out(0,0,k,0,0,0,0),&traj[3*R0*k],sizeof(float)*R0*3);	
+				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,0,0,0);
+				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,0,0,0);					
 				
 			}
 
 			//Pass data downstream
-			if(acqhdr->idx.kspace_encode_step_1+1 == E1 || acqhdr->idx.kspace_encode_step_1 == 0){
+			if(acqhdr->idx.kspace_encode_step_1+1 == E1){// || acqhdr->idx.kspace_encode_step_1 == 0){
 				recon_bit_->rbit_[e].data_.data_ = data_out;
+				//write_nd_array(&data_out, "data_out.cplx");
 				recon_bit_->rbit_[e].data_.trajectory_ = traj_out;
+				//write_nd_array(&traj_out, "traj_out.cplx");
 				recon_bit_->rbit_[e].data_.headers_ = headers_out;
 				if(this->next()->putq(m1) < 0){
 					GDEBUG("Failed to put job on queue. \n");

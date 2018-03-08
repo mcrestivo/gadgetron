@@ -307,7 +307,8 @@ namespace Gadgetron{
 				}
 			}
 		}
-		return valid;
+		return valid; //MCR always calculate new trajectories
+		//return false;
    }
   
   GADGET_FACTORY_DECLARE(SpiralToGenericGadget)
