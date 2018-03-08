@@ -42,6 +42,8 @@ namespace Gadgetron {
     //Map for storing PCA coefficients for each location
     std::map<int, hoNDKLT<std::complex<float> >* > pca_coefficients_;
 
+	hoNDArray<std::complex<float> > means;
+
     int max_buffered_profiles_;
     int samples_to_use_;
   };

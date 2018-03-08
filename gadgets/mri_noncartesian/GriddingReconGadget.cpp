@@ -98,15 +98,15 @@ namespace Gadgetron {
 				return GADGET_FAIL;
 			}
 			
+<<<<<<< HEAD
 			if (!buffer->trajectory_) {
+=======
+			/*if (buffer->trajectory_ == boost::none) {
+>>>>>>> compression_paper
 				GERROR("Trajectories not found. Bailing out.\n");
-				m1->release();
+			m1->release();
 				return GADGET_FAIL;
-			}
-
-			imarray.data_.create(image_dims_[0],image_dims_[1], 1, 1, N, S, SLC);
-
-			std::vector<size_t> new_order = {0,1,2,4,5,6,3};
+			*/
 
 			boost::shared_ptr<cuNDArray<float>> dcw;
 			boost::shared_ptr<cuNDArray<floatd2>> traj;

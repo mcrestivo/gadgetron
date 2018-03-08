@@ -75,7 +75,8 @@ elseif (ARMADILLO_FOUND)
     message("Armadillo not found, i.e. not compiling Blas/Lapack optimized MRI Gadgets")
 endif ()
 
-set( gadgetron_mricore_header_files GadgetMRIHeaders.h 
+set( gadgetron_mricore_header_files GadgetMRIHeaders.h
+                                    RateLimitGadget.h
                                     AcquisitionPassthroughGadget.h 
                                     AcquisitionFinishGadget.h 
                                     AccumulatorGadget.h 
@@ -127,7 +128,8 @@ set( gadgetron_mricore_header_files GadgetMRIHeaders.h
                                     GenericReconNoiseStdMapComputingGadget.h 
                                     WhiteNoiseInjectorGadget.h
                                     NoiseSummaryGadget.h 
-                                    NHLBICompression.h )
+                                    NHLBICompression.h
+									fwht.h )
 
 set( gadgetron_mricore_src_files AcquisitionPassthroughGadget.cpp 
                                 AcquisitionFinishGadget.cpp 
@@ -179,6 +181,7 @@ set( gadgetron_mricore_src_files AcquisitionPassthroughGadget.cpp
                                 GenericReconEigenChannelGadget.cpp 
                                 GenericReconNoiseStdMapComputingGadget.cpp 
                                 WhiteNoiseInjectorGadget.cpp
+                                RateLimitGadget.cpp
                                 NoiseSummaryGadget.cpp )
 
 set( gadgetron_mricore_config_files
@@ -228,7 +231,6 @@ target_link_libraries(gadgetron_mricore
     gadgetron_toolbox_image_analyze_io
     gadgetron_toolbox_hostutils
     ${ISMRMRD_LIBRARIES} 
-    ${FFTW3_LIBRARIES} 
     optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
     ${OPTIMIZED_GADGET_LIBS}
     ${Boost_LIBRARIES}

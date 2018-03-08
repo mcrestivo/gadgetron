@@ -9,11 +9,14 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fftw3.h>
+#include <mutex>
+
 
 #pragma pack(push, 1)
 struct CompressionHeader
 {
-    uint64_t elements_;
+    uint16_t elements_;
     float scale_;
     uint8_t bits_;
 };
@@ -33,20 +36,48 @@ public:
     }
     
     CompressedBuffer(std::vector<T>& d, T tolerance = -1.0, uint8_t precision_bits = 32)
-    {
+    {	/*bool use_transform = true;
+		if(use_transform){
+			std::cout << "in = " << d[4095] << std::endl;
+			//Transform
+			fftwf_plan p_fwd;
+			float *in, *out;
+			int N = d.size();			
+			{
+				std::lock_guard<std::mutex> guard(mutex_);
+				in = fftwf_alloc_real(N);
+				out = fftwf_alloc_real(N);
+				p_fwd = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT10, FFTW_ESTIMATE);
+ 			}
+			memcpy(in, &d[0], sizeof(float)*N);
+			fftwf_execute_r2r(p_fwd, in, out);
+			for(int i =0; i < N; i++){
+				out[i] *= std::sqrt(1/(2*float(N)));
+			}
+			//std::cout << "out = " << *(d_ptr+4095) << std::endl;
+			memcpy(&d[0], out, sizeof(float)*N);
+
+			{
+				std::lock_guard<std::mutex> guard(mutex_);
+				fftwf_destroy_plan(p_fwd);
+				fftwf_free(in);fftwf_free(out);
+			}
+		}*/
+		//std::cout << "in = " << d[4095] << std::endl;
         auto comp_func = [](T a, T b) { return std::abs(a) < std::abs(b); };
         max_val_ = *std::max_element(d.begin(), d.end(), comp_func);
 
         if (tolerance > 0) {
             tolerance_ = tolerance;
             scale_ = 0.5/tolerance_;
-            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_+1)));
+            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_)));
             bits_ = 0;
             while (max_int) {
                 bits_++;
                 max_int = max_int>>1;
             }
             bits_++; //Signed
+			//bits_++;
         } else {
             bits_ = precision_bits;
             uint64_t max_int = (1<<(bits_-1))-1;
@@ -57,10 +88,23 @@ public:
         elements_ = d.size();
         size_t bytes_needed = static_cast<size_t>(std::ceil((bits_*elements_)/8.0f));
         comp_.resize(bytes_needed, 0);
-
+		
+		//#pragma omp parallel for
         for (size_t i = 0; i < d.size(); i++) {
             setValue(i,d[i]);
         }
+		/*
+		fftwf_plan p_bkw;
+		p_bkw = fftwf_plan_r2r_1d(N, in, out, FFTW_REDFT01, FFTW_ESTIMATE);
+		in = &d[0];
+		fftwf_execute_r2r(p_bkw, in, out);
+		for(int i =0; i < N; i++){
+			out[i] *= std::sqrt(1/(float(N)));
+		}
+		memcpy(&comp_[0], out, sizeof(float)*N);
+		fftw_cleanup();
+		std::cout << "out = " << comp_[4095] << std::endl;*/
+		
     }
 
     float operator[](size_t idx)
@@ -95,27 +139,29 @@ public:
         return out;
     }
 
-    void deserialize(std::vector<uint8_t>& buffer)
+    int32_t deserialize(std::vector<uint8_t>& buffer)
     {
-        if (buffer.size() <= sizeof(CompressionHeader)) {
-            throw std::runtime_error("Invalid buffer size");
-        }
+	    if (buffer.size() <= sizeof(CompressionHeader)) {
+	        throw std::runtime_error("Invalid buffer size");
+	    }
 
-        CompressionHeader h;
-        memcpy(&h, &buffer[0], sizeof(CompressionHeader));
-        
-        size_t bytes_needed = static_cast<size_t>(std::ceil((h.bits_*h.elements_)/8.0f));
-        if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
-            throw std::runtime_error("Incorrect number of bytes in buffer");
-        }
+	    CompressionHeader h;
+	    memcpy(&h, &buffer[0], sizeof(CompressionHeader));
+	    
+	    size_t bytes_needed = static_cast<size_t>(std::ceil((h.bits_*h.elements_)/8.0f));
+	    /*if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
+	        throw std::runtime_error("Incorrect number of bytes in buffer");
+	    }*/
 
-        this->bits_ = h.bits_;
-        this->elements_ = h.elements_;
-        this->scale_ = h.scale_;
-        this->tolerance_ = 0.5/h.scale_;
-        this->comp_.resize(bytes_needed,0);
+	    this->bits_ = h.bits_;
+	    this->elements_ = h.elements_;
+	    this->scale_ = h.scale_;
+	    this->tolerance_ = 0.5/h.scale_;
+	    this->comp_.resize(bytes_needed,0);
 
-        memcpy(&comp_[0], &buffer[sizeof(CompressionHeader)], bytes_needed);
+	    memcpy(&comp_[0], &buffer[sizeof(CompressionHeader)], bytes_needed);
+
+		return (bytes_needed+sizeof(CompressionHeader));
     }
 
 private:
@@ -187,6 +233,9 @@ private:
 
         return static_cast<int64_t>(cbin);
     }
+
+protected:
+	std::mutex mutex_;
 };
 
 

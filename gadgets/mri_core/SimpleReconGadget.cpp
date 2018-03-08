@@ -1,6 +1,8 @@
 #include "SimpleReconGadget.h"
 #include "hoNDFFT.h"
 #include "hoNDArray_math.h"
+#include "hoNDArray_fileio.h"
+#include "mri_core_coil_map_estimation.h"
 
 namespace Gadgetron{
 
@@ -104,34 +106,50 @@ int SimpleReconGadget::process( GadgetContainerMessage<IsmrmrdReconData>* m1)
 
                     //Grab a wrapper around the relevant chunk of data [E0,E1,E2,CHA] for this loc, n, and s
                     //Each chunk will be [E0,E1,E2,CHA] big
-                    std::vector<size_t> chunk_dims(4);
+                    std::vector<size_t> chunk_dims(3);
                     chunk_dims[0] = E0;
                     chunk_dims[1] = E1;
-                    chunk_dims[2] = E2;
-                    chunk_dims[3] = CHA;
+                    //chunk_dims[2] = E2;
+                    chunk_dims[2] = CHA;
                     hoNDArray<std::complex<float> > chunk = hoNDArray<std::complex<float> >(chunk_dims, &dbuff.data_(0,0,0,0,n,s,loc));
 
                     //Do the FFTs in place
                     hoNDFFT<float>::instance()->ifft3c(chunk);
+					/*if(acqhdr.idx.repetition ==0){
+						chunk_reps.create(E0,E1,E2,CHA);
+						memcpy(chunk_reps.get_data_ptr()+acqhdr.idx.repetition*E0*E1*E2*CHA, chunk.get_data_ptr(), E0*E1*E2*CHA*sizeof(std::complex<float>));
+						//write_nd_array<std::complex<float>>(&chunk_reps, "channel_images.cplx");
+					}*/
 
                     //Square root of the sum of squares
                     //Each image will be [E0,E1,E2,1] big
-                    std::vector<size_t> img_dims(3);
+                    std::vector<size_t> img_dims(2);
                     img_dims[0] = E0;
                     img_dims[1] = E1;
-                    img_dims[2] = E2;
+                    //img_dims[2] = E2;
                     hoNDArray<std::complex<float> > output = hoNDArray<std::complex<float> >(img_dims, &imarray.data_(0,0,0,0,n,s,loc));
+					hoNDArray<std::complex<float> > coil_map = hoNDArray<std::complex<float> >(chunk_dims);
                     //Zero out the output
                     clear(output);
 
+					size_t ks = 4;
+					size_t power = 3;
+
+					Gadgetron::coil_map_2d_Inati(chunk, coil_map, ks, power);
+					Gadgetron::coil_combine(chunk, coil_map, 2, output);
+
+					for( int i = 0; i < output.get_number_of_elements(); i++ ){
+						output[i] = std::abs(output[i]);   
+					}    
+					//write_nd_array<std::complex<float>>(&coil_map, "coil_maps.cplx");
                     //Compute d* d in place
-                    multiplyConj(chunk,chunk,chunk);                    
+                   /* multiplyConj(chunk,chunk,chunk);                    
                     //Add up
                     for (size_t c = 0; c < CHA; c++) {
-                        output += hoNDArray<std::complex<float> >(img_dims, &chunk(0,0,0,c));
+                        output += hoNDArray<std::complex<float> >(img_dims, &chunk(0,0,c));
                     }                    
                     //Take the square root in place
-                    sqrt_inplace(&output);                    
+                    sqrt_inplace(&output);*/
                }
             }
         }
