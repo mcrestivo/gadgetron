@@ -97,10 +97,7 @@ namespace Gadgetron {
 				m1->release();
 				return GADGET_FAIL;
 			}
-			
-<<<<<<< HEAD
-			if (!buffer->trajectory_) {
-=======
+
 			/*if (buffer->trajectory_ == boost::none) {
 >>>>>>> compression_paper
 				GERROR("Trajectories not found. Bailing out.\n");
@@ -125,7 +122,8 @@ namespace Gadgetron {
 			} else {
 				throw std::runtime_error("Unsupported number of trajectory dimensions");
 			}
-
+			
+			std::vector<size_t> new_order = {0, 1, 2, 4, 5, 6, 3};
 			auto permuted = permute((hoNDArray<float_complext>*)&buffer->data_,&new_order);
 			cuNDArray<float_complext> data(*permuted);
 			
