@@ -13,6 +13,7 @@
 // -NIFTI and Analyze output
 // -Check on potential threading problem with asio socket 
 //    - having and reading and writing thread is supposedly not safe, but seems to work here
+// -Add command line switch for controlling verbosity of output
 // -Static linking for standalone executable. 
 
 #include <boost/program_options.hpp>
@@ -38,8 +39,12 @@
 #include <thread>
 #include <chrono>
 #include <condition_variable>
+#include <random>
 
 #include "NHLBICompression.h"
+#include "hoNDFFT.h"
+#include "hoNDArray_fileio.h"
+#include "fwht.h"
 
 #if defined GADGETRON_COMPRESSION_ZFP
 #include "zfp/zfp.h"
@@ -72,7 +77,9 @@ struct NoiseStatistics
     float sigma_min;
     float sigma_max;
     float sigma_mean;
+    float sigma_rms;
     float noise_dwell_time_us;
+	float relative_receiver_noise_bw;
 };
 
 #if defined GADGETRON_COMPRESSION_ZFP
@@ -1099,7 +1106,7 @@ public:
     {
         timeout_ms_ = t;
     }
-
+    
     void read_task()
     {
         if (!socket_) {
@@ -1108,25 +1115,25 @@ public:
 
         GadgetMessageIdentifier id;
         while (socket_->is_open()) {
-      try {
+	  try {
             boost::asio::read(*socket_, boost::asio::buffer(&id,sizeof(GadgetMessageIdentifier)));
-
+	    
             if (id.id == GADGET_MESSAGE_CLOSE) {
-          break;
+	      break;
             }
-
+	    
             GadgetronClientMessageReader* r = find_reader(id.id);
-
+	    
             if (!r) {
-          std::cout << "Message received with ID: " << id.id << std::endl;
-          throw GadgetronClientException("Unknown Message ID");
+	      std::cout << "Message received with ID: " << id.id << std::endl;
+	      throw GadgetronClientException("Unknown Message ID");
             } else {
-          r->read(socket_);
+	      r->read(socket_);
             }
-      } catch (...) {
-        std::cout << "Input stream has terminated" << std::endl;
-        return;
-      }
+	  } catch (...) {
+	    std::cout << "Input stream has terminated" << std::endl;
+	    return;	    
+	  }
         }
     }
 
@@ -1136,11 +1143,13 @@ public:
 
     void connect(std::string hostname, std::string port)
     {
+
+
         tcp::resolver resolver(io_service);
         tcp::resolver::query query(tcp::v4(), hostname.c_str(), port.c_str());
         tcp::resolver::iterator endpoint_iterator = resolver.resolve(query);
         tcp::resolver::iterator end;
-
+        
         socket_ = new tcp::socket(io_service);
         if (!socket_) {
             throw GadgetronClientException("Unable to create socket.");
@@ -1169,10 +1178,14 @@ public:
         }
 
         t.join();
+        
         if (error)
             throw GadgetronClientException("Error connecting using socket.");
+                               
+
 
         reader_thread_ = boost::thread(boost::bind(&GadgetronClientConnector::read_task, this));
+
     }
 
     void send_gadgetron_close() { 
@@ -1219,6 +1232,7 @@ public:
         boost::asio::write(*socket_, boost::asio::buffer(xml_string.c_str(), conf.script_length));    
 
     }
+
 
     void  send_gadgetron_parameters(std::string xml_string)
     {
@@ -1337,10 +1351,10 @@ public:
 
             CompressedBuffer<float> comp_buffer(input_data, local_tolerance);
             std::vector<uint8_t> serialized_buffer = comp_buffer.serialize();
-
+ 
             compressed_bytes_sent_ += serialized_buffer.size();
             uncompressed_bytes_sent_ += data_elements*2*sizeof(float);
-
+                            
             uint32_t bs = (uint32_t)serialized_buffer.size();
             boost::asio::write(*socket_, boost::asio::buffer(&bs, sizeof(uint32_t)));
             boost::asio::write(*socket_, boost::asio::buffer(&serialized_buffer[0], serialized_buffer.size()));
@@ -1350,7 +1364,7 @@ public:
     void send_ismrmrd_zfp_compressed_acquisition_precision(ISMRMRD::Acquisition& acq, unsigned int compression_precision) 
     {
 
-#if defined GADGETRON_COMPRESSION_ZFP
+#if defined GADGETRON_COMPRESSION_ZFP           
         if (!socket_) {
             throw GadgetronClientException("Invalid socket.");
         }
@@ -1409,6 +1423,7 @@ public:
 
     void send_ismrmrd_zfp_compressed_acquisition_tolerance(ISMRMRD::Acquisition& acq, float compression_tolerance, NoiseStatistics& stat) 
     {
+        
 #if defined GADGETRON_COMPRESSION_ZFP
         if (!socket_) {
             throw GadgetronClientException("Invalid socket.");
@@ -1497,6 +1512,7 @@ public:
     }
 
 protected:
+	Gadgetron::hoNDArray< std::complex<float> > tmp;
     typedef std::map<unsigned short, boost::shared_ptr<GadgetronClientMessageReader> > maptype;
 
     GadgetronClientMessageReader* find_reader(unsigned short r)
@@ -1613,7 +1629,7 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
 
     try {
         con.connect(host_name,port);
-        con.send_gadgetron_configuration_script(xml_config);
+        con.send_gadgetron_configuration_script(xml_config);       
         con.send_gadgetron_close();
         con.wait();
     } catch (...) {
@@ -1635,40 +1651,6 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
     }
 
     return stat;
-}
-
-void send_ismrmrd_acq(GadgetronClientConnector& con, ISMRMRD::Acquisition& acq_tmp, 
-    unsigned int compression_precision, bool use_zfp_compression, float compression_tolerance, NoiseStatistics& noise_stats)
-{
-    try
-    {
-        if (compression_precision > 0)
-        {
-            if (use_zfp_compression) {
-                con.send_ismrmrd_zfp_compressed_acquisition_precision(acq_tmp, compression_precision);
-            }
-            else {
-                con.send_ismrmrd_compressed_acquisition_precision(acq_tmp, compression_precision);
-            }
-        }
-        else if (compression_tolerance > 0.0)
-        {
-            if (use_zfp_compression) {
-                con.send_ismrmrd_zfp_compressed_acquisition_tolerance(acq_tmp, compression_tolerance, noise_stats);
-            }
-            else {
-                con.send_ismrmrd_compressed_acquisition_tolerance(acq_tmp, compression_tolerance, noise_stats);
-            }
-        }
-        else
-        {
-            con.send_ismrmrd_acquisition(acq_tmp);
-        }
-    }
-    catch(...)
-    {
-        throw GadgetronClientException("send_ismrmrd_acq failed ... ");
-    }
 }
 
 int main(int argc, char **argv)
@@ -1791,7 +1773,7 @@ int main(int argc, char **argv)
     if (!vm.count("query")) {
         ISMRMRD::IsmrmrdHeader h;
         ISMRMRD::deserialize(xml_config.c_str(),h);
-
+        
         std::string noise_id;
         if (h.measurementInformation.is_present() &&
             (h.measurementInformation().measurementDependency.size() > 0)) {
@@ -1820,7 +1802,7 @@ int main(int argc, char **argv)
                     noise_id = measurementStr;
                 }
             }
-
+            
             std::cout << "Querying the Gadgetron instance for the dependent measurement: " << noise_id << std::endl; 
             noise_stats = get_noise_statistics(std::string("GadgetronNoiseCovarianceMatrix_") + noise_id, host_name, port, timeout_ms);
             if (!noise_stats.status) {
@@ -1829,14 +1811,49 @@ int main(int argc, char **argv)
                     std::cout << "  !!!!!! COMPRESSION TOLERANCE LEVEL SPECIFIED, BUT IT IS NOT POSSIBLE TO DETERMINE SIGMA. ASSIMUMING SIGMA == 1 !!!!!!" << std::endl;
                 }
             } else {
-                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << std::endl; 
+                std::cout << "Noise level: Min sigma = " << noise_stats.sigma_min << ", Mean sigma = " << noise_stats.sigma_mean << ", Max sigma = " << noise_stats.sigma_max << ", RMS Sigma: " << noise_stats.sigma_rms << std::endl; 
+            }
+
+            if (compression_tolerance > 0.0) {
+                ISMRMRD::Compression c;
+                if (use_zfp_compression) {
+                    c.compressionAlgorithm = "ZFP";
+                } else {
+                    c.compressionAlgorithm = "NHLBI";
+                }
+                c.compressionTolerance = compression_tolerance;
+                c.compressionSigmaReference = 1.0;
+                c.compressionDwellTimeReference_us = 0.0;
+                if (noise_stats.status) {
+                    c.compressionSigmaReference = noise_stats.sigma_min;
+                    c.compressionDwellTimeReference_us = noise_stats.noise_dwell_time_us;
+                }
+                if (!h.acquisitionSystemInformation) {
+                    ISMRMRD::AcquisitionSystemInformation si;
+                    si.compression = c;
+                    h.acquisitionSystemInformation = si;
+                } else {
+                    h.acquisitionSystemInformation().compression = c;
+                }
+
+                std::stringstream ss;
+                ISMRMRD::serialize(h,ss);
+                xml_config = ss.str();
+
+				if (h.acquisitionSystemInformation.is_present() && h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth.is_present()) {
+					noise_stats.relative_receiver_noise_bw = *h.acquisitionSystemInformation->relativeReceiverNoiseBandwidth;
+				} else {
+					noise_stats.relative_receiver_noise_bw = 1.0;
+				}
+
             }
         }
     }
+    
 
     GadgetronClientConnector con;
     con.set_timeout(timeout_ms);
-
+    
     if ( out_fileformat == "hdr" )
     {
         con.register_reader(GADGET_MESSAGE_ISMRMRD_IMAGE, boost::shared_ptr<GadgetronClientMessageReader>(new GadgetronClientAnalyzeImageMessageReader(hdf5_out_group)));
