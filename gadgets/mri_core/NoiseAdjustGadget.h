@@ -42,7 +42,7 @@ namespace Gadgetron {
       float compression_tolerance_;
       float compression_sigma_reference_;
       float compression_dwell_time_reference_us_;
-      
+      float compression_noise_scaling_;
 
       unsigned long long number_of_noise_samples_;
       unsigned long long number_of_noise_samples_per_acquisition_;

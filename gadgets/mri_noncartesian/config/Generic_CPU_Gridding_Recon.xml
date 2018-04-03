@@ -41,7 +41,7 @@
         <name>AccTrig</name>
         <dll>gadgetron_mricore</dll>
         <classname>AcquisitionAccumulateTriggerGadget</classname>
-        <property><name>trigger_dimension</name><value>kspace_encode_step_1</value></property>
+        <property><name>trigger_dimension</name><value>repetition</value></property>
         <property><name>sorting_dimension</name><value></value></property>
         <!--<property><name>sliding_window_size</name><value>21</value></property>-->
     </gadget>
@@ -62,7 +62,7 @@
         <name>CPUGridding_PrepRef</name>
         <dll>gadgetron_mri_noncartesian</dll>
         <classname>CPUGridding_PrepRef</classname>
-        <property><name>accelerationFactor</name><value>4.0</value></property>
+        <property><name>accelerationFactor</name><value>1.0</value></property>
     </gadget>
 
     <gadget>

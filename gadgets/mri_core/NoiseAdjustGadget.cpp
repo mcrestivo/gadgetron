@@ -95,14 +95,10 @@ namespace Gadgetron{
                     std::string dependencyType = iter->dependencyType;
                     std::string dependencyID = iter->measurementID;
 
-        GDEBUG("Compression Information: \n\t algorithm: %s \n\t tolerance: %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
-
-        is_compressed_data_ = true;
-        compression_algorithm_ = comp_info.compressionAlgorithm;
-        compression_tolerance_ = comp_info.compressionTolerance;
-        compression_sigma_reference_ = comp_info.compressionSigmaReference;
-        compression_dwell_time_reference_us_ = comp_info.compressionDwellTimeReference_us;       
-    }
+		    if(dependencyType == "Noise" || dependencyType == "noise"){
+		      measurement_id_of_noise_dependency_ = dependencyID;
+		    }
+		}
 
                 if (!measurement_id_of_noise_dependency_.empty()) {
                     GDEBUG("Measurement ID of noise dependency is %s\n", measurement_id_of_noise_dependency_.c_str());
@@ -186,6 +182,20 @@ namespace Gadgetron{
             }
         }
 
+	if(current_ismrmrd_header_.acquisitionSystemInformation && current_ismrmrd_header_.acquisitionSystemInformation->compression){
+
+	  ISMRMRD::Compression comp_info = *current_ismrmrd_header_.acquisitionSystemInformation->compression;
+
+	  GDEBUG("Compression Information: \n\t algorithm: %s \n\t tolerance %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
+
+	  is_compressed_data_ = true;
+	  compression_algorithm_ = comp_info.compressionAlgorithm;
+	  compression_tolerance_ = comp_info.compressionTolerance;
+	  compression_sigma_reference_ = comp_info.compressionSigmaReference;
+	  compression_noise_scaling_ = comp_info.NoiseScalingFactor;
+	  compression_dwell_time_reference_us_ = comp_info.compressionDwellTimeReference_us;
+	}
+	    
 
         //Let's figure out if some channels are "scale_only"
         std::string uncomb_str = scale_only_channels_by_name.value();
@@ -346,11 +356,6 @@ namespace Gadgetron{
         return true;
     }
 
-    void NoiseAdjustGadget::computeNoisePrewhitener()
-    {
-        GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
-        GDEBUG("receiver_noise_bandwidth: %f\n", receiver_noise_bandwidth_);
-
   void NoiseAdjustGadget::computeNoisePrewhitener()
   {
     GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
@@ -433,26 +438,30 @@ namespace Gadgetron{
         }
     }
 
-    int NoiseAdjustGadget::process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* m1, GadgetContainerMessage< hoNDArray< std::complex<float> > >* m2)
-    {
-        bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
-        unsigned int channels = m1->getObjectPtr()->active_channels;
-        unsigned int samples = m1->getObjectPtr()->number_of_samples;
-
-        //TODO: Remove this
-        if (measurement_id_.empty()) {
-            unsigned int muid = m1->getObjectPtr()->measurement_uid;
-            std::ostringstream ostr;
-            ostr << muid;
-            measurement_id_ = ostr.str();
-        }
-
   int NoiseAdjustGadget::process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* m1, GadgetContainerMessage< hoNDArray< std::complex<float> > >* m2)
   {
     bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
     unsigned int channels = m1->getObjectPtr()->active_channels;
     unsigned int samples = m1->getObjectPtr()->number_of_samples;
 
+    if(measurement_id_.empty() ) {
+      unsigned int muid = m1->getObjectPtr()->measurement_uid;
+      std::ostringstream ostr;
+      ostr << muid;
+      measurement_id_ = ostr.str();
+    }
+
+    if( is_noise ) {
+
+      if(noiseCovarianceLoaded_){
+	m1->release();
+	return GADGET_OK;
+      }
+
+      if(number_of_noise_samples_per_acquisition_ == 0){
+	number_of_noise_samples_per_acquisition_ = samples;
+      }
+      
             if (noise_dwell_time_us_ < 0) {
                 if (noise_dwell_time_us_preset_ > 0.0) {
                     noise_dwell_time_us_ = noise_dwell_time_us_preset_;

@@ -373,9 +373,7 @@ namespace Gadgetron{
                 
             return m1;
         }
-
-protected:
-			std::mutex mutex_;
+    };
 
     // ------------------------------------------------------------------------------------------------------- //
     // ISMRMRD wave form reader/writer

@@ -39,7 +39,7 @@ namespace Gadgetron{
   ISMRMRD::EncodingLimits e_limits = h.encoding[0].encodingLimits;
   ISMRMRD::TrajectoryDescription traj_desc;
   
-  if(h.encoding[0].trajectory == "spiral"){
+  if(h.encoding[0].trajectory == ISMRMRD::TrajectoryType::SPIRAL){
 	  golden_angle = goldenAngle.value();
 	  radial = false;
 	  if (h.encoding[0].trajectoryDescription) {
@@ -118,7 +118,7 @@ namespace Gadgetron{
 	  GDEBUG("samples_to_skip_end_   : %d\n", samples_to_skip_end_);
 	  
   }
-  else if(h.encoding[0].trajectory == "radial"){
+  else if(h.encoding[0].trajectory == ISMRMRD::TrajectoryType::RADIAL){
 	  //num_samples_per_profile
 	  radial = true;
 	  num_profiles_per_frame_ = radialProfiles.value();
