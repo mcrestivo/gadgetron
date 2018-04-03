@@ -1653,6 +1653,40 @@ NoiseStatistics get_noise_statistics(std::string dependency_name, std::string ho
     return stat;
 }
 
+void send_ismrmrd_acq(GadgetronClientConnector& con, ISMRMRD::Acquisition& acq_tmp, 
+    unsigned int compression_precision, bool use_zfp_compression, float compression_tolerance, NoiseStatistics& noise_stats)
+{
+    try
+    {
+        if (compression_precision > 0)
+        {
+            if (use_zfp_compression) {
+                con.send_ismrmrd_zfp_compressed_acquisition_precision(acq_tmp, compression_precision);
+            }
+            else {
+                con.send_ismrmrd_compressed_acquisition_precision(acq_tmp, compression_precision);
+            }
+        }
+        else if (compression_tolerance > 0.0)
+        {
+            if (use_zfp_compression) {
+                con.send_ismrmrd_zfp_compressed_acquisition_tolerance(acq_tmp, compression_tolerance, noise_stats);
+            }
+            else {
+                con.send_ismrmrd_compressed_acquisition_tolerance(acq_tmp, compression_tolerance, noise_stats);
+            }
+        }
+        else
+        {
+            con.send_ismrmrd_acquisition(acq_tmp);
+        }
+    }
+    catch(...)
+    {
+        throw GadgetronClientException("send_ismrmrd_acq failed ... ");
+    }
+}
+
 int main(int argc, char **argv)
 {
 
