@@ -107,6 +107,7 @@ namespace Gadgetron{
 
 	  samples_to_skip_start_  =  0; //n.get<int>(std::string("samplestoskipstart.value"))[0];
 	  samples_to_skip_end_    = -1; //n.get<int>(std::string("samplestoskipend.value"))[0];
+	 
 	  
 	  GDEBUG("smax:                    %f\n", smax_);
 	  GDEBUG("gmax:                    %f\n", gmax_);

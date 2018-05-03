@@ -42,6 +42,8 @@ namespace Gadgetron{
 		float num_phases;
 		float num_segments;
 		
+		int space_matrix_offset_E1;
+		
 		hoNDArray<std::complex<float>> Interpolate(std::complex<float>* data1, std::complex<float>* data2, float start_phase, float end_phase, float interp_phase, size_t samples);
 
 		virtual int process_config(ACE_Message_Block *mb);

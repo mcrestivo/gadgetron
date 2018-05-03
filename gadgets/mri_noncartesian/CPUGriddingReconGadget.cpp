@@ -139,7 +139,7 @@ namespace Gadgetron{
 			// Define preconditioning weights
 			boost::shared_ptr< cuNDArray<float> > _precon_weights = sum(abs_square(csm.get()).get(), 2);
 			boost::shared_ptr<cuNDArray<float> > R_diag = R_->get();
-			*R_diag *= float(.3);
+			*R_diag *= float(.1);
 			*_precon_weights += *R_diag;
 			R_diag.reset();
 			reciprocal_sqrt_inplace(_precon_weights.get());	
@@ -173,8 +173,9 @@ namespace Gadgetron{
 			cuNDArray<float_complext> device_samples((hoNDArray<float_complext>*)&data_n );
 			E_->set_codomain_dimensions(device_samples.get_dimensions().get());
 			//device_samples *= *dcw;
-			//device_image = cg_.solve(&device_samples);
-			//host_image = *device_image->to_host();
+			device_image = cg_.solve(&device_samples);
+			host_image = *device_image->to_host();
+			//write_nd_array(&host_image, "host_image.cplx");
 			
 			for(size_t n = 0; n < recon_bit_->rbit_[e].data_.data_.get_size(4); n++){	
 				std::cout << n << std::endl;
@@ -188,6 +189,7 @@ namespace Gadgetron{
 				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
 
 			}
+			write_nd_array(&imarray.data_, "imagearray.cplx");
 			this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 			this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);		
 			
@@ -525,7 +527,8 @@ namespace Gadgetron{
 			}
 		}
 */
-		//write_nd_array(&csm_,"csm.cplx");
+		write_nd_array(&csm_,"csm.cplx");
+		write_nd_array(&arg_,"arg.cplx");
 		return std::make_tuple(csm_,arg_);
 	}	
 

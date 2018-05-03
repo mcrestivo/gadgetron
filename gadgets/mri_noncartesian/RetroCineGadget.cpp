@@ -31,7 +31,7 @@ namespace Gadgetron{
             {
                     if (i->name == "RetroGatedImages") {
                         num_phases = i->value;
-                        //num_phases = 50;
+                        //num_phases = 30;
                     } else if (i->name == "RetroGatedSegmentSize") {
                         num_segments = i->value;
                     } else {
@@ -40,10 +40,13 @@ namespace Gadgetron{
             }
         } else {
             GDEBUG("RetroGated parameters are supposed to be in the UserParameters. No user parameter section found\n");
-            return GADGET_OK;
+            //return GADGET_OK;
         }
+        if( num_phases == 0) { num_phases = 30; }
+        //num_interleaves = h.encodingLimits.kspace_encode_step_1.maximum+1;	
         
-        //num_interleaves = h.encodingLimits.kspace_encode_step_1.maximum+1;		
+        ISMRMRD::Encoding encoding = h.encoding[0];
+        space_matrix_offset_E1 = (int16_t)encoding.encodedSpace.matrixSize.y / 2 - (int16_t)encoding.encodingLimits.kspace_encoding_step_1->center;	
 		
 		return GADGET_OK;
 	}
@@ -53,7 +56,6 @@ namespace Gadgetron{
 		
 		for(size_t e = 0; e < recon_bit_->rbit_.size(); e++){
 			hoNDArray<std::complex<float>> data_array = recon_bit_->rbit_[e].data_.data_;
-			hoNDArray<float> traj_array = *recon_bit_->rbit_[e].data_.trajectory_;
 			
 			//bitreversed_order = {0 8 4 12 2 10 6 14 1 9 5 13 3 11 6 15}
 			std::vector<int> bitreversed_order = {0, 16, 8, 24, 4, 20, 12, 28, 2, 18, 10, 26, 6, 22, 12, 30, 1, 17, 9, 25, 5, 21, 13, 29, 3, 19, 11, 17, 7, 23, 13, 31};
@@ -83,17 +85,26 @@ namespace Gadgetron{
 			
 			//get k_lines
 			std::vector<size_t> k_lines;
-			for(size_t i=0; i<E1; i++){
+			for(size_t i=0; i<E1+space_matrix_offset_E1; i++){
 				acqhdr = &recon_bit_->rbit_[e].data_.headers_(i,0,0,0,0);
 				if(acqhdr->acquisition_time_stamp != 0){
 					k_lines.push_back(i);
 				}
 			}
 			
+			if(acqhdr->trajectory_dimensions > 0){
+				hoNDArray<float> traj_array = *recon_bit_->rbit_[e].data_.trajectory_;
+			}
+			
 			//Iterate over interleaves
 			for(size_t s=0; s<E1; s++){
 				
 				size_t k = k_lines[s];
+				std::cout << "s = " << s <<std::endl;
+				std::cout << "E1 = " << E1 <<std::endl;
+				if( k > E1 ){
+					break;
+				}
 				//Get physio times and convert to ratio
 				float cpt_max = 0.0;
 				for(size_t n=0; n<N; n++){
@@ -147,6 +158,9 @@ namespace Gadgetron{
 					if(end_ind < 0){
 						end_ind = start_ind+1;
 					}
+					if(start_ind < 0 && end_ind == 0){
+						start_ind = N-1;
+					}
 					
 					std::cout << start_ind << std::endl;
 					std::cout << end_ind << std::endl;
@@ -168,15 +182,34 @@ namespace Gadgetron{
 					
 				}
 				
-				auto traj = *recon_bit_->rbit_[e].data_.trajectory_;
-				memcpy(&traj_out(0,0,k,0,0,0,0),&traj[3*R0*k],sizeof(float)*R0*3);	
+				if(acqhdr->trajectory_dimensions > 0){
+					auto traj = *recon_bit_->rbit_[e].data_.trajectory_;
+					memcpy(&traj_out(0,0,k,0,0,0,0),&traj[3*R0*k],sizeof(float)*R0*3);
+				}	
 				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,0,0,0);
 				acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,0,0,0);					
 				
 			}
 
 			//Pass data downstream
-			if(acqhdr->idx.kspace_encode_step_1+1 == E1){// || acqhdr->idx.kspace_encode_step_1 == 0){
+			if(acqhdr->idx.kspace_encode_step_1+1+space_matrix_offset_E1 >= E1){// || acqhdr->idx.kspace_encode_step_1 == 0){
+				recon_bit_->rbit_[e].data_.data_ = data_out;
+				//write_nd_array(&data_out, "data_out.cplx");
+				if(acqhdr->trajectory_dimensions > 0){
+					recon_bit_->rbit_[e].data_.trajectory_ = traj_out; //no traj for epi
+				}
+				//write_nd_array(&traj_out, "traj_out.cplx");
+				recon_bit_->rbit_[e].data_.headers_ = headers_out;
+				if(this->next()->putq(m1) < 0){
+					GDEBUG("Failed to put job on queue. \n");
+					m1->release();
+					return GADGET_FAIL;
+				}
+			}
+			
+			/*
+			//Hack gor Raj's golden angle
+			if(acqhdr->idx.kspace_encode_step_1+1 == 6){// || acqhdr->idx.kspace_encode_step_1 == 0){
 				recon_bit_->rbit_[e].data_.data_ = data_out;
 				//write_nd_array(&data_out, "data_out.cplx");
 				recon_bit_->rbit_[e].data_.trajectory_ = traj_out;
@@ -187,7 +220,7 @@ namespace Gadgetron{
 					m1->release();
 					return GADGET_FAIL;
 				}
-			}
+			}*/
 		}
 
 		return GADGET_OK;

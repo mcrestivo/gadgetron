@@ -25,7 +25,7 @@
       <dll>gadgetron_mricore</dll>
       <classname>NoiseAdjustGadget</classname>
     </gadget>
-
+    
     <gadget>
       <name>ReconX</name>
       <dll>gadgetron_epi</dll>
@@ -36,6 +36,8 @@
       <name>EPICorr</name>
       <dll>gadgetron_epi</dll>
       <classname>EPICorrGadget</classname>
+      <property><name>OEPhaseCorrectionMode</name><value>polynomial</value></property>
+      <property><name>B0CorrectionMode</name><value>none</value></property>
     </gadget>
 
     <!-- FFT in X back to k -->
@@ -61,34 +63,29 @@
         <classname>AcquisitionAccumulateTriggerGadget</classname>
         <property>
             <name>trigger_dimension</name>
-            <value>repetition</value>
+            <value></value>
         </property>
         <property>
           <name>sorting_dimension</name>
-          <value>slice</value>
+          <value></value>
         </property>
     </gadget>
 
     <gadget>
-        <name>Buff</name>
+        <name>BucketToBuffer</name>
         <dll>gadgetron_mricore</dll>
         <classname>BucketToBufferGadget</classname>
-        <property>
-            <name>N_dimension</name>
-            <value></value>
-        </property>
-        <property>
-          <name>S_dimension</name>
-          <value></value>
-        </property>
-        <property>
-          <name>split_slices</name>
-          <value>true</value>
-        </property>
-        <property>
-          <name>ignore_segment</name>
-          <value>true</value>
-        </property>
+        <property><name>N_dimension</name><value>phase</value></property>
+        <property><name>S_dimension</name><value></value></property>
+        <property><name>split_slices</name><value>false</value></property>
+        <property><name>ignore_segment</name><value>true</value></property>
+        <property><name>verbose</name><value>true</value></property>
+    </gadget>
+    
+    <gadget>
+        <name>RetroCineGadget</name>
+        <dll>gadgetron_mri_noncartesian</dll>
+        <classname>RetroCineGadget</classname>
     </gadget>
 
     <gadget>
@@ -115,15 +112,20 @@
       <classname>AutoScaleGadget</classname>
     </gadget>
 
-    <gadget>
-      <name>FloatToShort</name>
-      <dll>gadgetron_mricore</dll>
-      <classname>FloatToUShortGadget</classname>
+	<gadget>
+        <name>FloatToShortAttrib</name>
+        <dll>gadgetron_mricore</dll>
+        <classname>FloatToUShortGadget</classname>
+
+        <property><name>max_intensity</name><value>32767</value></property>
+        <property><name>min_intensity</name><value>0</value></property>
+        <property><name>intensity_offset</name><value>0</value></property>
     </gadget>
- 
-     <gadget>
+
+    <gadget>
       <name>ImageFinish</name>
       <dll>gadgetron_mricore</dll>
-      <classname>ImageFinishGadget</classname>
+      <classname>ImageFinishGadget</classname>     
     </gadget>
+    
 </gadgetronStreamConfiguration>

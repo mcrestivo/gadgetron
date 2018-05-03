@@ -18,7 +18,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/split.hpp>
 
-namespace Gadgetron{
+namespace Gadgetron {
 
     NoiseAdjustGadget::NoiseAdjustGadget()
         : noise_decorrelation_calculated_(false)
@@ -95,10 +95,12 @@ namespace Gadgetron{
                     std::string dependencyType = iter->dependencyType;
                     std::string dependencyID = iter->measurementID;
 
-		    if(dependencyType == "Noise" || dependencyType == "noise"){
-		      measurement_id_of_noise_dependency_ = dependencyID;
-		    }
-		}
+                    GDEBUG("Found dependency measurement : %s with ID %s\n", dependencyType.c_str(), dependencyID.c_str());
+
+                    if (dependencyType == "Noise" || dependencyType == "noise") {
+                        measurement_id_of_noise_dependency_ = dependencyID;
+                    }
+                }
 
                 if (!measurement_id_of_noise_dependency_.empty()) {
                     GDEBUG("Measurement ID of noise dependency is %s\n", measurement_id_of_noise_dependency_.c_str());
@@ -136,10 +138,22 @@ namespace Gadgetron{
                                 // if number of channels in noise is different than data 
                                 // or 
                                 // if any channels in noise do not exist in data
-                                if(CHA != current_ismrmrd_header_.acquisitionSystemInformation->coilLabel.size() || coil_order_of_data_in_noise_.size()!=CHA)
+                                if(CHA != current_ismrmrd_header_.acquisitionSystemInformation->coilLabel.size())
                                 {
-                                    GDEBUG("Noise and measurement coil labels don't match\n");
+                                    GDEBUG("Noise and measurement have different number of coils\n");
                                     return GADGET_FAIL;
+                                }
+                                else
+                                {
+                                    if(coil_order_of_data_in_noise_.size()==CHA)
+                                    {
+                                        GWARN_STREAM("Noise and meansurement have different coils, but can be reordered ... ");
+                                    }
+                                    else
+                                    {
+                                        coil_order_of_data_in_noise_.clear();;
+                                        GWARN_STREAM("Noise and meansurement have different coils and cannot be reordered ... ");
+                                    }
                                 }
                             }
 
@@ -149,7 +163,6 @@ namespace Gadgetron{
                                 GDEBUG("Length of coil label arrays do not match");
                                 return GADGET_FAIL;
                             }
-
                             bool labels_match = true;
                             for (size_t l = 0; l < noise_ismrmrd_header_.acquisitionSystemInformation->coilLabel.size(); l++)
                             {
@@ -158,7 +171,6 @@ namespace Gadgetron{
                                 {
                                     labels_match = false; break;
                                 }
-
                                 if (noise_ismrmrd_header_.acquisitionSystemInformation->coilLabel[l].coilName !=
                                     current_ismrmrd_header_.acquisitionSystemInformation->coilLabel[l].coilName)
                                 {
@@ -182,20 +194,6 @@ namespace Gadgetron{
             }
         }
 
-	if(current_ismrmrd_header_.acquisitionSystemInformation && current_ismrmrd_header_.acquisitionSystemInformation->compression){
-
-	  ISMRMRD::Compression comp_info = *current_ismrmrd_header_.acquisitionSystemInformation->compression;
-
-	  GDEBUG("Compression Information: \n\t algorithm: %s \n\t tolerance %g\n", comp_info.compressionAlgorithm.c_str(), comp_info.compressionTolerance);
-
-	  is_compressed_data_ = true;
-	  compression_algorithm_ = comp_info.compressionAlgorithm;
-	  compression_tolerance_ = comp_info.compressionTolerance;
-	  compression_sigma_reference_ = comp_info.compressionSigmaReference;
-	  compression_noise_scaling_ = comp_info.NoiseScalingFactor;
-	  compression_dwell_time_reference_us_ = comp_info.compressionDwellTimeReference_us;
-	}
-	    
 
         //Let's figure out if some channels are "scale_only"
         std::string uncomb_str = scale_only_channels_by_name.value();
@@ -356,62 +354,30 @@ namespace Gadgetron{
         return true;
     }
 
-  void NoiseAdjustGadget::computeNoisePrewhitener()
-  {
-    GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
-    GDEBUG("receiver_noise_bandwidth: %f\n", receiver_noise_bandwidth_);
-    
-    if (!noise_decorrelation_calculated_) {
-      
-      if (number_of_noise_samples_ > 0 ) {
-	GDEBUG("Calculating noise decorrelation\n");
-	
-	noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
-	
-        if (is_compressed_data_ && compression_algorithm_ == std::string("NHLBI")) {
-            float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;//*std::sqrt(acquisition_dwell_time_us_/noise_dwell_time_us_);
-            float absolute_compression_variance = (2*absolute_compression_tolerance)*(2*absolute_compression_tolerance)/(12.0);
-            GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
-            GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
-            size_t c = noise_prewhitener_matrixf_.get_size(0);
-            std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
-            for (size_t i = 0; i <  c; i++) {
-                //GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
-                dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
-            }
-        }else if (is_compressed_data_ && compression_algorithm_ == std::string("ZFP")) {
-			float absolute_compression_tolerance = compression_tolerance_*compression_sigma_reference_;
+    void NoiseAdjustGadget::computeNoisePrewhitener()
+    {
+        GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
+        GDEBUG("receiver_noise_bandwidth: %f\n", receiver_noise_bandwidth_);
 
-			//We have to bring it back to absolute scaling on the data to figure out the rounding errors
-			absolute_compression_tolerance *= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
-			//Do the rounding for the exponent
-			absolute_compression_tolerance = std::exp2(std::floor(std::log2(absolute_compression_tolerance)));
-			//Now scale back to noise sample reference
-			absolute_compression_tolerance /= std::sqrt(noise_dwell_time_us_/acquisition_dwell_time_us_)*receiver_noise_bandwidth_;
-			//absolute_compression_tolerance *= 1.045; //Empirical fudge factor for ZFP
-			float absolute_compression_variance = (.0857*absolute_compression_tolerance)*(.0857*absolute_compression_tolerance);
-			GDEBUG("Absolute compression tolerance: %g\n", absolute_compression_tolerance);
-			GDEBUG("Absolute compression variance: %g\n", absolute_compression_variance);
-			size_t c = noise_prewhitener_matrixf_.get_size(0);
-			std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
-			for (size_t i = 0; i <  c; i++) {
-				//GDEBUG("Noise variance: %g, compression noise variance: %g\n", std::real(dptr[i*c+i]), absolute_compression_variance);
-				dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
-            }
-		}
+        if (!noise_decorrelation_calculated_) {
 
-	//Mask out scale  only channels
-	size_t c = noise_prewhitener_matrixf_.get_size(0);
-	std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr(); 
-	for (unsigned int ch = 0; ch < scale_only_channels_.size(); ch++) {
-	  for (size_t i = 0; i <  c; i++) {
-	    for (size_t j = 0; j < c; j++) {
-	      if ((i == scale_only_channels_[ch] || (j == scale_only_channels_[ch])) && (i != j)) { //zero if scale only and not on diagonal
-		dptr[i*c+j] = std::complex<float>(0.0,0.0);
-	      }
-	    }
-	  }
-	}
+            if (number_of_noise_samples_ > 0) {
+                GDEBUG("Calculating noise decorrelation\n");
+
+                noise_prewhitener_matrixf_ = noise_covariance_matrixf_;
+
+                //Mask out scale  only channels
+                size_t c = noise_prewhitener_matrixf_.get_size(0);
+                std::complex<float>* dptr = noise_prewhitener_matrixf_.get_data_ptr();
+                for (unsigned int ch = 0; ch < scale_only_channels_.size(); ch++) {
+                    for (size_t i = 0; i < c; i++) {
+                        for (size_t j = 0; j < c; j++) {
+                            if ((i == scale_only_channels_[ch] || (j == scale_only_channels_[ch])) && (i != j)) { //zero if scale only and not on diagonal
+                                dptr[i*c + j] = std::complex<float>(0.0, 0.0);
+                            }
+                        }
+                    }
+                }
 
                 float v = Gadgetron::norm1(noise_covariance_matrixf_);
                 if (v <= 0)
@@ -438,30 +404,31 @@ namespace Gadgetron{
         }
     }
 
-  int NoiseAdjustGadget::process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* m1, GadgetContainerMessage< hoNDArray< std::complex<float> > >* m2)
-  {
-    bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
-    unsigned int channels = m1->getObjectPtr()->active_channels;
-    unsigned int samples = m1->getObjectPtr()->number_of_samples;
+    int NoiseAdjustGadget::process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* m1, GadgetContainerMessage< hoNDArray< std::complex<float> > >* m2)
+    {
+        bool is_noise = m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT);
+        unsigned int channels = m1->getObjectPtr()->active_channels;
+        unsigned int samples = m1->getObjectPtr()->number_of_samples;
 
-    if(measurement_id_.empty() ) {
-      unsigned int muid = m1->getObjectPtr()->measurement_uid;
-      std::ostringstream ostr;
-      ostr << muid;
-      measurement_id_ = ostr.str();
-    }
+        //TODO: Remove this
+        if (measurement_id_.empty()) {
+            unsigned int muid = m1->getObjectPtr()->measurement_uid;
+            std::ostringstream ostr;
+            ostr << muid;
+            measurement_id_ = ostr.str();
+        }
 
-    if( is_noise ) {
+        if (is_noise) {
+            if (noiseCovarianceLoaded_) {
+                m1->release(); //Do not accumulate noise when we have a loaded noise covariance
+                return GADGET_OK;
+            }
 
-      if(noiseCovarianceLoaded_){
-	m1->release();
-	return GADGET_OK;
-      }
+            // this noise can be from a noise scan or it can be from the built-in noise
+            if (number_of_noise_samples_per_acquisition_ == 0) {
+                number_of_noise_samples_per_acquisition_ = samples;
+            }
 
-      if(number_of_noise_samples_per_acquisition_ == 0){
-	number_of_noise_samples_per_acquisition_ = samples;
-      }
-      
             if (noise_dwell_time_us_ < 0) {
                 if (noise_dwell_time_us_preset_ > 0.0) {
                     noise_dwell_time_us_ = noise_dwell_time_us_preset_;
@@ -504,28 +471,21 @@ namespace Gadgetron{
         //We should only reach this code if this data is not noise.
         if (perform_noise_adjust_) {
             //Calculate the prewhitener if it has not been done
-            if (!noise_decorrelation_calculated_ && (number_of_noise_samples_ > 0)) {
-                if (number_of_noise_samples_ > 1) {
+            if (!noise_decorrelation_calculated_ && (number_of_noise_samples_ > 0))
+            {
+                if (number_of_noise_samples_ > 1)
+                {
                     //Scale
                     noise_covariance_matrixf_ *= std::complex<float>(1.0 / (float)(number_of_noise_samples_ - 1));
                     number_of_noise_samples_ = 1; //Scaling has been done
                 }
-                computeNoisePrewhitener();
-                acquisition_dwell_time_us_ = m1->getObjectPtr()->sample_time_us;
-                if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
-                    noise_bw_scale_factor_ = 1.0f;
-                }
-                else {
-                    noise_bw_scale_factor_ = (float)std::sqrt(2.0*acquisition_dwell_time_us_ / noise_dwell_time_us_*receiver_noise_bandwidth_);
-                }
 
-                noise_prewhitener_matrixf_ *= std::complex<float>(noise_bw_scale_factor_, 0.0);
-
-                size_t CHA = noise_prewhitener_matrixf_.get_size(0);
+                // if required, switch order of coils
+                size_t CHA = noise_covariance_matrixf_.get_size(0);
 
                 // check whether to switch channel order
                 bool reorder_noise_cov = false;
-                if(coil_order_of_data_in_noise_.size()==CHA)
+                if (coil_order_of_data_in_noise_.size() == CHA)
                 {
                     size_t n, m;
                     for (n = 0; n<CHA; n++)
@@ -537,34 +497,52 @@ namespace Gadgetron{
                         }
                     }
 
-                    if (reorder_noise_cov)
+                    if (true)
                     {
                         GDEBUG_STREAM("Require to reorder the noise covariance matrix to match the data ... ");
-                        hoNDArray< std::complex<float> > noise_prewhitener_reordered;
-                        noise_prewhitener_reordered.create(CHA, CHA);
-                        Gadgetron::clear(noise_prewhitener_reordered);
+                        hoNDArray< std::complex<float> > noise_covariance_reordered;
+                        noise_covariance_reordered.create(CHA, CHA);
+                        Gadgetron::clear(noise_covariance_reordered);
 
-                        // switch row of prewhitener
+                        // switch row
                         for (n = 0; n<CHA; n++)
                         {
                             GDEBUG_STREAM(n << " - copy " << noise_ismrmrd_header_.acquisitionSystemInformation->coilLabel[coil_order_of_data_in_noise_[n]].coilName
                                 << " to " << current_ismrmrd_header_.acquisitionSystemInformation->coilLabel[n].coilName);
 
-                            for (m=0; m<CHA; m++)
+                            for (m = 0; m<CHA; m++)
                             {
-                                noise_prewhitener_reordered(n, m) = noise_prewhitener_matrixf_(coil_order_of_data_in_noise_[n], m);
+                                noise_covariance_reordered(n, m) = noise_covariance_matrixf_(coil_order_of_data_in_noise_[n], m);
                             }
                         }
 
-                        float v = Gadgetron::norm2(noise_prewhitener_reordered);
-                        float v2 = Gadgetron::norm2(noise_prewhitener_matrixf_);
+                        // switch column
+                        for (m = 0; m<CHA; m++)
+                        {
+                            for (n = 0; n<CHA; n++)
+                            {
+                                noise_covariance_reordered(n, m) = noise_covariance_matrixf_(n, coil_order_of_data_in_noise_[m]);
+                            }
+                        }
 
-                        GDEBUG_STREAM("noise_prewhitener_reordered = " << v);
-                        GDEBUG_STREAM("noise_prewhitener_matrixf_ = " << v2);
+                        float v = Gadgetron::norm2(noise_covariance_matrixf_);
+                        float v2 = Gadgetron::norm2(noise_covariance_reordered);
 
-                        noise_prewhitener_matrixf_ = noise_prewhitener_reordered;
+                        GDEBUG_STREAM("noise_covariance_matrixf_ = " << v);
+                        GDEBUG_STREAM("noise_covariance_reordered = " << v2);
                     }
                 }
+
+                computeNoisePrewhitener();
+                acquisition_dwell_time_us_ = m1->getObjectPtr()->sample_time_us;
+                if ((noise_dwell_time_us_ == 0.0f) || (acquisition_dwell_time_us_ == 0.0f)) {
+                    noise_bw_scale_factor_ = 1.0f;
+                }
+                else {
+                    noise_bw_scale_factor_ = (float)std::sqrt(2.0*acquisition_dwell_time_us_ / noise_dwell_time_us_*receiver_noise_bandwidth_);
+                }
+
+                noise_prewhitener_matrixf_ *= std::complex<float>(noise_bw_scale_factor_, 0.0);
 
                 GDEBUG("Noise dwell time: %f\n", noise_dwell_time_us_);
                 GDEBUG("Acquisition dwell time: %f\n", acquisition_dwell_time_us_);
@@ -607,7 +585,6 @@ namespace Gadgetron{
 
         return GADGET_OK;
     }
-   
 
     void NoiseAdjustGadget::print_coil_label(const std::vector<ISMRMRD::CoilLabel>& coils)
     {
@@ -645,6 +622,10 @@ namespace Gadgetron{
         }
 
         order_in_src.resize(srcN, 0);
+        for (d = 0; d<dstN; d++)
+        {
+            order_in_src[d] = d;
+        }
 
         // if coil labels are not matching, try to reorder them
         for (d = 0; d<dstN; d++)
