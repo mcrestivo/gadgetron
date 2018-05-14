@@ -232,6 +232,7 @@ target_link_libraries(gadgetron_mricore
     gadgetron_toolbox_image_analyze_io
     gadgetron_toolbox_hostutils
     ${ISMRMRD_LIBRARIES} 
+    ${FFTW3_LIBRARIES} 
     optimized ${ACE_LIBRARIES} debug ${ACE_DEBUG_LIBRARY} 
     ${OPTIMIZED_GADGET_LIBS}
     ${Boost_LIBRARIES}

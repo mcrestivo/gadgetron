@@ -1,4 +1,4 @@
-//#include "GadgetIsmrmrdReadWrite.h"
+#include "GadgetIsmrmrdReadWrite.h"
 #include "cuFFTGadget.h"
 #include "cuNDFFT.h"
 namespace Gadgetron{
