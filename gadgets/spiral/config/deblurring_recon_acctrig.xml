@@ -9,6 +9,9 @@
     <!-- writer -->
     <writer><slot>1022</slot><dll>gadgetron_mricore</dll><classname>MRIImageWriter</classname></writer>
 
+    <!-- Noise prewhitening -->
+    <gadget><name>NoiseAdjust</name><dll>gadgetron_mricore</dll><classname>NoiseAdjustGadget</classname></gadget>
+
 	<gadget>
 		<name>PCA</name>
 		<dll>gadgetron_mricore</dll>
@@ -19,11 +22,8 @@
 		<name>CoilReduction</name>
 		<dll>gadgetron_mricore</dll>
 		<classname>CoilReductionGadget</classname>
-		<property><name>coils_out</name><value>16</value></property>
+		<property><name>coils_out</name><value>8</value></property>
 	</gadget>
-
-    <!-- Noise prewhitening -->
-    <gadget><name>NoiseAdjust</name><dll>gadgetron_mricore</dll><classname>NoiseAdjustGadget</classname></gadget>
 
     <!-- Data accumulation and trigger gadget -->
     <gadget>
@@ -61,8 +61,9 @@
 		<name>Extract</name>
 		<dll>gadgetron_mricore</dll>
 		<classname>ExtractGadget</classname>
+        <property><name>extract_mask</name><value>3</value></property>
 	</gadget>  
-
+<!--
 	<gadget>
 		<name>AutoScaleGadget</name>
 		<dll>gadgetron_mricore</dll>
@@ -74,7 +75,7 @@
 		<dll>gadgetron_mricore</dll>
 		<classname>FloatToUShortGadget</classname>
 	</gadget>
-
+-->
 	<gadget>
 		<name>ImageFinish</name>
 		<dll>gadgetron_mricore</dll>

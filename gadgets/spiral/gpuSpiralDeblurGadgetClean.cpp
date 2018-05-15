@@ -184,6 +184,12 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		}
 
 		hoNDArray<std::complex<float>> host_data = recon_bit_->rbit_[0].data_.data_;
+        hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
+        hoNDArray<float> B0_trajectory;
+        if(recon_bit_->rbit_.size() > 1){
+            B0_trajectory = *(recon_bit_->rbit_[1].data_.trajectory_);
+        }
+
 		std::vector<size_t> data_dims(7,0);
 		for(int d =0; d < 6; d++){
 			data_dims[d] = host_data.get_size(d);
@@ -232,7 +238,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			host_traj.create(R0*E1);
 			host_weights.create(R0*E1);
 
-			if (false) {
+			if (curr_header.trajectory_dimensions != 3) {
 				//Setup calc_vds parameters
 				int     nfov   = 1;
 				int     ngmax  = 1e7;       /*  maximum number of gradient samples      */
@@ -247,7 +253,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				calc_traj(xgrad, ygrad, R0, E1, sample_time, krmax_, &x_trajectory, &y_trajectory, &weighting);
 
 				for (int i = 0; i < (R0*E1); i++) {
-					host_traj[i]   = floatd2(-x_trajectory[i]/(2.),-y_trajectory[i]/(2.));
+					host_traj[i]   = floatd2(-x_trajectory[i]/2.,-y_trajectory[i]/2.);
 					host_weights[i] = weighting[i];
 				}
 
@@ -258,7 +264,6 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				delete [] weighting;
 			}
 			else{
-				hoNDArray<float> trajectory = *(recon_bit_->rbit_[0].data_.trajectory_);
 				for (int i = 0; i < (R0*E1); i++) {
 					host_traj[i]   = floatd2(trajectory[i*3],trajectory[i*3+1]);
 					host_weights[i] = trajectory[i*3+2];
@@ -284,7 +289,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			B0_weights.create(R0*E1);
 
 			float krmaxB0_ = 2.*(B0_header.user_float[4])/10000.; //Hack #mcr
-			if (false) {
+			if (B0_header.trajectory_dimensions != 3) {
 				//Setup calc_vds parameters
 				const int     nfov   = 2;
 				int     ngmax  =1e7;       /*  maximum number of gradient samples      */
@@ -316,10 +321,9 @@ typedef cuNFFT_plan<_real,2> plan_type;
 				delete [] weighting;
 			}
 			else{			
-				hoNDArray<float> trajectory = *(recon_bit_->rbit_[1].data_.trajectory_);
 				for (int i = 0; i < (R0*E1); i++) {
-					B0_traj[i]   = floatd2(trajectory[i*3],trajectory[i*3+1]);
-					B0_weights[i] = trajectory[i*3+2];
+					B0_traj[i]   = floatd2(B0_trajectory[i*3],B0_trajectory[i*3+1]);
+					B0_weights[i] = B0_trajectory[i*3+2];
 				}		
 			}
 
@@ -353,8 +357,16 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );	
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			hoNDArray<complext<float>> B0_temp_1 = *reg_image.to_host();
+            float B0_max;
+            for (int i = 0; i < B0_temp_1.get_number_of_elements(); i++) {
+                if(abs(B0_temp_1[i]) > B0_max){
+                    B0_max = abs(B0_temp_1[i]);
+                }
+            }
 			for (int i = 0; i < B0_temp_0.get_number_of_elements(); i++) {
-				B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
+                if(abs(B0_temp_1[i]) > .1*B0_max){
+				    B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
+                }
 				//std::cout << B0_map[i] << std::endl;
 			}
 			//write_nd_array<complext<float>>( &B0_temp_0, "B0_image1.cplx" );
