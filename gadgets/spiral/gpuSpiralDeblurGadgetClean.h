@@ -34,7 +34,7 @@ namespace Gadgetron{
     GADGET_PROPERTY(buffer_convolution_oversampling_factor, float, "Oversampling used in buffer convolution", 1.25);
     GADGET_PROPERTY(reconstruction_os_factor_x, float, "Oversampling for reconstruction in x-direction", 1.0);
     GADGET_PROPERTY(reconstruction_os_factor_y, float, "Oversampling for reconstruction in y-direction", 1.0);
-	GADGET_PROPERTY(do_deblurring, bool, "Deblurring ON/Off", false);
+	GADGET_PROPERTY(do_deblurring, bool, "Deblurring ON/Off", true);
 	cuNDArray<float_complext> reg_image0;
 
     virtual int process_config(ACE_Message_Block* mb);

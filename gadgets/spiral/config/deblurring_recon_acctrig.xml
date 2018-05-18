@@ -30,7 +30,7 @@
         <name>AccTrig</name>
         <dll>gadgetron_mricore</dll>
         <classname>AcquisitionAccumulateTriggerGadget</classname>
-        <property><name>trigger_dimension</name><value></value></property>
+        <property><name>trigger_dimension</name><value>repetition</value></property>
         <property><name>sorting_dimension</name><value></value></property>
     </gadget>
 
@@ -63,7 +63,7 @@
 		<classname>ExtractGadget</classname>
         <property><name>extract_mask</name><value>3</value></property>
 	</gadget>  
-<!--
+
 	<gadget>
 		<name>AutoScaleGadget</name>
 		<dll>gadgetron_mricore</dll>
@@ -75,7 +75,7 @@
 		<dll>gadgetron_mricore</dll>
 		<classname>FloatToUShortGadget</classname>
 	</gadget>
--->
+
 	<gadget>
 		<name>ImageFinish</name>
 		<dll>gadgetron_mricore</dll>

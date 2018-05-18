@@ -344,8 +344,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			//#pragma omp parallel for 
 			//#endif
 			for(int i =0; i < recon_bit_->rbit_[1].data_.data_.get_number_of_elements(); i++){
-				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
-				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/3.),2.) );
+				recon_bit_->rbit_[1].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2),2.) );
+				recon_bit_->rbit_[2].data_.data_[i] *= exp(-.5*pow((i%R0)/(R0/2),2.) );
 			}
 			cuNDArray<complext<float>> gpu_B0_data((hoNDArray<float_complext>*)&recon_bit_->rbit_[1].data_.data_);
 			nfft_plan_B0_.compute( &gpu_B0_data, &image, &gpu_weights_B0, plan_type::NFFT_BACKWARDS_NC2C );
@@ -358,13 +358,13 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			hoNDArray<complext<float>> B0_temp_1 = *reg_image.to_host();
             float B0_max;
-            for (int i = 0; i < B0_temp_1.get_number_of_elements(); i++) {
+            /*for (int i = 0; i < B0_temp_1.get_number_of_elements(); i++) {
                 if(abs(B0_temp_1[i]) > B0_max){
                     B0_max = abs(B0_temp_1[i]);
                 }
-            }
+            }*/
 			for (int i = 0; i < B0_temp_0.get_number_of_elements(); i++) {
-                if(abs(B0_temp_1[i]) > .1*B0_max){
+                if(abs(B0_temp_1[i]) > 3){ //assumes SNR units and filters out noise > 3 std
 				    B0_map[i] = _real(arg(B0_temp_0[i]*conj(B0_temp_1[i]))/( 2*M_PI*.001 ));//delTE = 1 ms
                 }
 				//std::cout << B0_map[i] << std::endl;
@@ -443,7 +443,7 @@ typedef cuNFFT_plan<_real,2> plan_type;
 		if( phase_mask.get_number_of_elements() == 0 ) {
 			phase_mask.create(gridded_data_0.get_dimensions());
 			phase_mask.fill(0.0f);
-			float f_step = fmax/((L-1)/2);
+			float f_step = fmax/((L-1)/2.);
 			std::complex<float> omega = std::complex<float>(sample_time,0.0);
 			std::cout << omega << std::endl;
 			//#ifdef USE_OMP
@@ -452,16 +452,40 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			for(int r = 0; r < R0*E1*CHA; r++) {
 				host_data[r] = omega*float(r%R0);
 			}
-			std::cout << sample_time*R0 << std::endl;
+			std::cout << sample_time*R0*2.*M_PI*f_step << std::endl;
 			gpu_data = *((hoNDArray<float_complext>*)&host_data);
-			nfft_plan_.compute( &gpu_data, &image, &gpu_weights, plan_type::NFFT_BACKWARDS_NC2C );	
+            hoNDArray<float> ones;
+            ones.create(R0*E1);
+            ones.fill(1.0);
+            cuNDArray<float> cu_ones(&ones);
+			nfft_plan_.compute( &gpu_data, &image, &cu_ones, plan_type::NFFT_BACKWARDS_NC2C );	
 			//csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			nfft_plan_.fft(&image, plan_type::NFFT_FORWARDS);
 			//sum(&image,2);
 			auto gridded_data_1 = *(image.to_host());
+            auto offset = gridded_data_1[gridded_data_1.get_size(0)/2];
 			for (int i = 0; i < gridded_data_1.get_number_of_elements(); i++) {
-				phase_mask[i] = exp(_complext(0.0,1.0)*2*M_PI*f_step*gridded_data_1[i]/_complext(std::sqrt(gridded_data_1.get_size(0)),0.0));
+				phase_mask[i] = exp(_complext(0.0,1.0)*2.*M_PI*f_step*(abs(gridded_data_1[i]-offset)));///_complext(std::sqrt(gridded_data_1.get_size(0)),0.0));
 			}
+            std::cout << offset << std::endl;
+			for(int x = 0; x < gridded_data_1.get_size(0); x++){
+				float kx;
+                if(x<gridded_data_1.get_size(0)/2){
+                    kx = (x*2./gridded_data_1.get_size(0));
+                }else{
+                    kx = (-2+x*2.0/gridded_data_1.get_size(0));
+                }
+				for(int y = 0; y < gridded_data_1.get_size(1); y++){
+				    float ky;
+                    if(y<gridded_data_1.get_size(1)/2){
+                        ky = (y*2./gridded_data_1.get_size(1));
+                    }else{
+                        ky = (-2.+y*2.0/gridded_data_1.get_size(1));
+                    }
+					phase_mask[x+y*gridded_data_1.get_size(0)] *= .5+std::atan(100.*(1.-std::sqrt(kx*kx+ky*ky)/.9))/M_PI;
+				}
+			}
+            write_nd_array<_complext>( &gridded_data_1, "time_grid.cplx" );
 		}		
 
 		for (int j = 0; j < (L-1)/2; j++){
@@ -494,8 +518,8 @@ typedef cuNFFT_plan<_real,2> plan_type;
 			csm_mult_MH<float,2>(&image, &reg_image, &deref_csm);
 			temp_image = *(reg_image.to_host());
 			if(j == 5){
-				//write_nd_array<_complext>( &temp_image, "temp5.cplx" );
-				//write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
+				//write_nd_array<_complext>( &gridded_data_1, "time_grid.cplx" );
+				write_nd_array<_complext>( &phase_mask, "phase_mask.cplx" );
 			}
 
 			/*int mfc_index;
