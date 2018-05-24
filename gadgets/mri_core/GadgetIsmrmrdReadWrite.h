@@ -14,7 +14,7 @@
 #include <complex>
 
 #include "NHLBICompression.h"
-#include "hoNDFFT.h"
+//#include "hoNDFFT.h"
 #include "hoNDArray_fileio.h"
 #include "fwht.h"
 #include <fftw3.h>
@@ -336,7 +336,7 @@ namespace Gadgetron{
 				//std::cout << "samples = " << samples << std::endl;
 				bool use_transform = false;
 				int N = samples*cha*2;
-				if(use_transform){
+				/*if(use_transform){
 					//std::cout << "size " << N << std::endl;
 					if(N > 50000) { 
 						Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr, N, 1, -1);
@@ -344,7 +344,7 @@ namespace Gadgetron{
 					else {
 						Gadgetron::hoNDFFT<float>::instance()->dct(d_ptr, N, 1, -1);
 					}
-				}
+				}*/
 				
 				if(m1->getObjectPtr()->idx.kspace_encode_step_1 == 0){
 					//tmp.create(samples,cha,8);

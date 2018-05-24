@@ -1959,7 +1959,7 @@ int main(int argc, char **argv)
                 {
                     while(wav_tmp.head.time_stamp < acq_tmp.getHead().acquisition_time_stamp)
                     {
-                        con.send_ismrmrd_waveform(wav_tmp);
+                        //con.send_ismrmrd_waveform(wav_tmp);
 
                         if (verbose)
                         {

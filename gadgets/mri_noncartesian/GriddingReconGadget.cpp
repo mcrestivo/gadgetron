@@ -126,93 +126,108 @@ namespace Gadgetron {
 				throw std::runtime_error("Unsupported number of trajectory dimensions");
 			}
 
-			auto permuted = permute((hoNDArray<float_complext>*)&buffer->data_,&new_order);
-			cuNDArray<float_complext> data(*permuted);
 			
 			if (dcw){
 				float scale_factor = float(prod(image_dims_os_))/asum(dcw.get());
 				*dcw *= scale_factor;
 			}
 
-			//Gridding
-			auto images = reconstruct(&data,traj.get(),dcw.get(),CHA);
+            hoNDArray<float_complext> data_n(RO,E1,E2,CHA,1,S,SLC);            
+            for(size_t n = 0; n < N; n++)
+            {
+                memcpy(&data_n[0],&buffer->data_(0,0,0,0,n,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
 
-			//Calculate coil sensitivity map
-			auto csm = estimate_b1_map<float,2>(images.get());
+			    auto permuted = permute((hoNDArray<float_complext>*)&data_n,&new_order);
+			    cuNDArray<float_complext> data(*permuted);
 
-                        //Coil combine
-			*images *= *conj(csm.get());
-			auto combined = sum(images.get(),images->get_number_of_dimensions()-1);
-				
-			auto host_img = combined->to_host();
+			    //Gridding
+			    auto images = reconstruct(&data,traj.get(),dcw.get(),CHA);
 
-			auto elements = imarray.data_.get_number_of_elements();
-			memcpy(imarray.data_.get_data_ptr(), host_img->get_data_ptr(), sizeof(float)*2*elements);
+			    //Calculate coil sensitivity map
+			    auto csm = estimate_b1_map<float,2>(images.get());
 
-			this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
-			this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);
-			
+                //Coil combine
+			    *images *= *conj(csm.get());
+			    auto combined = sum(images.get(),images->get_number_of_dimensions()-1);
+				    
+			    auto host_img = combined->to_host();
 
-			//Is this where we measure SNR?
-			if (replicas.value() > 0 && snr_frame.value() == process_called_times_) {
-						
-				hoNDArray<std::complex<float> > rep_array(image_dims_[0], image_dims_[1], replicas.value());
-				
-				std::mt19937 engine;
-				std::normal_distribution<float> distribution;
-				for (size_t r = 0; r < replicas.value(); ++r) {
+			    auto elements = imarray.data_.get_number_of_elements();
+				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_img->get_data_ptr(), sizeof(float)*2*host_img->get_number_of_elements());
+			    //memcpy(imarray.data_.get_data_ptr(), host_img->get_data_ptr(), sizeof(float)*2*elements);
 
-					if (r % 10 == 0) {
-						GDEBUG("Running pseudo replics %d of %d\n", r, replicas.value());
-					}
-					hoNDArray<std::complex<float> > dtmp = buffer->data_;
-					auto permuted_rep = permute((hoNDArray<float_complext>*)&dtmp,&new_order);
-					auto dataptr = permuted_rep->get_data_ptr();
+            }
 
-					for (size_t k =0; k <  permuted_rep->get_number_of_elements(); k++){
-						dataptr[k] += std::complex<float>(distribution(engine),distribution(engine));
-					}
-					
-					cuNDArray<float_complext> data_rep(*permuted_rep);
-					
-					images = reconstruct(&data_rep,traj.get(),dcw.get(),CHA);
-					
-					//Coil combine
-					*images *= *conj(csm.get());
-					auto combined = sum(images.get(),images->get_number_of_dimensions()-1);
-					
-					auto host_img = combined->to_host();
-					
-					auto elements = imarray.data_.get_number_of_elements();
-					size_t offset = image_dims_[0]*image_dims_[1]*r;
-					
-					memcpy(rep_array.get_data_ptr()+offset, host_img->get_data_ptr(), sizeof(float)*2*elements);
-				}
-				
+		    this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
+		    this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);
+		    
 
-				hoNDArray<float> mag(rep_array.get_dimensions());
-				hoNDArray<float> mean(image_dims_[0],image_dims_[1]);
-				hoNDArray<float> std(image_dims_[0],image_dims_[1]);
-				
-				Gadgetron::abs(rep_array, mag);
-				Gadgetron::sum_over_dimension(mag,mean,2);
-				Gadgetron::scal(1.0f/replicas.value(), mean);
-				
-				mag -= mean;
-				mag *= mag;
-				
-				Gadgetron::sum_over_dimension(mag,std,2);
-				Gadgetron::scal(1.0f/(replicas.value()-1), std);
-				Gadgetron::sqrt_inplace(&std);
-				
-				//SNR image
-				mean /= std;
-				imarray.data_ = *real_to_complex< std::complex<float> >(&mean);
-				
-				this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
-				this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, image_series.value() + 100 * ((int)e + 3), GADGETRON_IMAGE_SNR_MAP);
-			}
-		}
+		    //Is this where we measure SNR?
+		    if (replicas.value() > 0) {
+					    
+			    hoNDArray<std::complex<float> > rep_array(image_dims_[0], image_dims_[1], replicas.value());
+			    
+			    std::mt19937 engine;
+			    std::normal_distribution<float> distribution;
+			    for (size_t r = 0; r < replicas.value(); ++r) {
+
+                    memcpy(&data_n[0],&buffer->data_(0,0,0,0,snr_frame.value(),0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
+
+				    if (r % 10 == 0) {
+					    GDEBUG("Running pseudo replics %d of %d\n", r, replicas.value());
+				    }
+				    auto permuted_rep = permute((hoNDArray<float_complext>*)&data_n,&new_order);
+				    auto dataptr = permuted_rep->get_data_ptr();
+
+				    for (size_t k =0; k <  permuted_rep->get_number_of_elements(); k++){
+					    dataptr[k] += std::complex<float>(distribution(engine),distribution(engine));
+				    }
+				    
+				    cuNDArray<float_complext> data_rep(*permuted_rep);
+				    
+				    auto images = reconstruct(&data_rep,traj.get(),dcw.get(),CHA);
+
+                    auto csm = estimate_b1_map<float,2>(images.get());
+				    
+				    //Coil combine
+				    *images *= *conj(csm.get());
+				    auto combined = sum(images.get(),images->get_number_of_dimensions()-1);
+				    
+				    auto host_img = combined->to_host();
+				    
+				    auto elements = imarray.data_.get_number_of_elements()/N;
+				    size_t offset = image_dims_[0]*image_dims_[1]*r;
+				    
+				    memcpy(rep_array.get_data_ptr()+offset, host_img->get_data_ptr(), sizeof(float)*2*elements);
+			    }
+			    
+
+			    hoNDArray<float> mag(rep_array.get_dimensions());
+			    hoNDArray<float> mean(image_dims_[0],image_dims_[1]);
+			    hoNDArray<float> std(image_dims_[0],image_dims_[1]);
+			    
+			    Gadgetron::abs(rep_array, mag);
+			    Gadgetron::sum_over_dimension(mag,mean,2);
+			    Gadgetron::scal(1.0f/replicas.value(), mean);
+			    
+			    mag -= mean;
+			    mag *= mag;
+			    
+			    Gadgetron::sum_over_dimension(mag,std,2);
+			    Gadgetron::scal(1.0f/(replicas.value()-1), std);
+			    Gadgetron::sqrt_inplace(&std);
+			    
+			    //SNR image
+			    mean /= std;
+                write_nd_array(&mean, "SNR_map.real");
+                auto mean_cplx = *real_to_complex< std::complex<float> >(&mean);
+                for(size_t n = 0; n < N; n++){
+			        memcpy(&imarray.data_(0,0,0,0,n,0,0), mean_cplx.get_data_ptr(), sizeof(std::complex<float>)*mean_cplx.get_number_of_elements());
+			    }
+			    this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
+			    this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, image_series.value() + 100 * ((int)e + 3), GADGETRON_IMAGE_SNR_MAP);
+		    }
+	    }   
 		
 		m1->release();
 

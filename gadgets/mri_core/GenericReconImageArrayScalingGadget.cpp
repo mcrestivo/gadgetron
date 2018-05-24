@@ -8,7 +8,7 @@
 #include "mri_core_coil_map_estimation.h"
 
 #define GENERICRECON_DEFAULT_INTENSITY_SCALING_FACTOR 4.0f
-#define GENERICRECON_DEFAULT_INTENSITY_MAX 4096
+#define GENERICRECON_DEFAULT_INTENSITY_MAX 2049
 
 namespace Gadgetron {
 

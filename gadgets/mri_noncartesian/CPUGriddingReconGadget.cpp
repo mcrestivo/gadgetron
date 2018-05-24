@@ -172,7 +172,7 @@ namespace Gadgetron{
 			memcpy(&data_n[0],&buffer->data_(0,0,0,0,0,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
 			cuNDArray<float_complext> device_samples((hoNDArray<float_complext>*)&data_n );
 			E_->set_codomain_dimensions(device_samples.get_dimensions().get());
-			//device_samples *= *dcw;
+			device_samples *= *dcw;
 			device_image = cg_.solve(&device_samples);
 			host_image = *device_image->to_host();
 			//write_nd_array(&host_image, "host_image.cplx");

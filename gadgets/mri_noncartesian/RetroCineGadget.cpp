@@ -42,7 +42,7 @@ namespace Gadgetron{
             GDEBUG("RetroGated parameters are supposed to be in the UserParameters. No user parameter section found\n");
             //return GADGET_OK;
         }
-        if( num_phases == 0) { num_phases = 30; }
+        num_phases = 30;
         //num_interleaves = h.encodingLimits.kspace_encode_step_1.maximum+1;	
         
         ISMRMRD::Encoding encoding = h.encoding[0];
