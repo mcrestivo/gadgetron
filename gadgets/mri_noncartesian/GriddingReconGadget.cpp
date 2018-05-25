@@ -11,6 +11,7 @@
 #include "hoNDArray_math.h"
 #include "hoNDArray_utils.h"
 #include "cuNDArray_fileio.h"
+#include "hoNDArray_fileio.h"
 #include "cudaDeviceManager.h"
 #include <numeric>
 #include <random>
@@ -130,7 +131,10 @@ namespace Gadgetron {
 			if (dcw){
 				float scale_factor = float(prod(image_dims_os_))/asum(dcw.get());
 				*dcw *= scale_factor;
+                std::cout << "scale_factor = " << scale_factor << std::endl;
 			}
+            write_nd_array(dcw.get(), "dcw.real");
+            write_nd_array(traj.get(), "traj.cplx");
 
             hoNDArray<float_complext> data_n(RO,E1,E2,CHA,1,S,SLC);            
             for(size_t n = 0; n < N; n++)
@@ -268,6 +272,10 @@ namespace Gadgetron {
 			std::vector<size_t> flat_dims = {traj->get_number_of_elements()};
 			cuNDArray<floatd2> flat_traj(flat_dims,traj->get_data_ptr());
 
+            auto dcw_shared = boost::make_shared<cuNDArray<float>>(dcw);
+            sqrt_inplace(dcw_shared.get()); //Take square root to use for weighting
+            E->set_dcw( dcw_shared );
+
 			E->set_domain_dimensions(&recon_dims);
 			cuCgSolver<float_complext> solver;
 			solver.set_max_iterations(iteration_max.value());
@@ -296,7 +304,8 @@ namespace Gadgetron {
 		for (size_t i = 0; i < traj_dcw->get_number_of_elements()/3; i++){
 			traj_ptr[i][0] = ptr[i*3];
 			traj_ptr[i][1] = ptr[i*3+1];
-			dcw_ptr[i] = ptr[i*3+2];
+            if(i%reduced_dims[0] == 0) dcw_ptr[i] = ptr[i*3+2]/100.;
+            else dcw_ptr[i] = ptr[i*3+2];
 		}
 
 		return std::make_tuple(traj,dcw);

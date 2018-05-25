@@ -158,6 +158,7 @@ namespace Gadgetron{
 			cg_.set_output_mode( (true) ? cuCgSolver<float_complext>::OUTPUT_VERBOSE : cuCgSolver<float_complext>::OUTPUT_SILENT);
 			
 			E_->set_domain_dimensions(&imageDims);
+            sqrt_inplace(dcw.get()); //Take square root to use for weighting
 			E_->set_dcw( dcw );
 			E_->set_csm( csm );
 			E_->setup( uint64d2( imageDims[0], imageDims[1] ), uint64d2( imageDimsOs[0], imageDimsOs[1] ), kernelWidth );
@@ -182,14 +183,14 @@ namespace Gadgetron{
 				memcpy(&data_n[0],&buffer->data_(0,0,0,0,n,0,0),sizeof(std::complex<float>)*RO*E1*E2*CHA*S*SLC);
 				//write_nd_array(&data_n,"data_n.cplx");
 				device_samples = data_n;
-				//device_samples *= *dcw;
+				device_samples *= *dcw;
 				device_image = cg_.solve(&device_samples);
 				//E_->mult_MH( &device_samples, device_image.get());
 				host_image = *device_image->to_host();
 				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
 
 			}
-			write_nd_array(&imarray.data_, "imagearray.cplx");
+			//write_nd_array(&imarray.data_, "imagearray.cplx");
 			this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 			this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);		
 			
@@ -432,9 +433,10 @@ namespace Gadgetron{
 		auto dcwPtr = dcw->get_data_ptr();
 		auto trajPtr = traj->get_data_ptr();
 		auto ptr = dcwTraj->get_data_ptr();
-		for(unsigned int i = 0; i != dcwTraj->get_number_of_elements()/3; i++){
+		for(unsigned int i = 0; i <= dcwTraj->get_number_of_elements()/3; i++){
 			trajPtr[i] = floatd2(ptr[i*3],ptr[i*3+1]);
-			dcwPtr[i] = ptr[i*3+2];
+            if(i%dims[1] == 0) dcwPtr[i] = ptr[i*3+2]/100.;
+            else dcwPtr[i] = ptr[i*3+2];
 		}
 		return std::make_tuple(traj, dcw);
 	}
@@ -527,8 +529,8 @@ namespace Gadgetron{
 			}
 		}
 */
-		write_nd_array(&csm_,"csm.cplx");
-		write_nd_array(&arg_,"arg.cplx");
+		//write_nd_array(&csm_,"csm.cplx");
+		//write_nd_array(&arg_,"arg.cplx");
 		return std::make_tuple(csm_,arg_);
 	}	
 

@@ -205,8 +205,8 @@ namespace Gadgetron{
 				float* co_ptr = reinterpret_cast<float*>(host_traj_->get_data_ptr());
 
 				for (int i = 0; i < (samples_per_interleave_*Nints_); i++) {
-				co_ptr[i*3+0] = -x_trajectory[i]/2;
-				co_ptr[i*3+1] = -y_trajectory[i]/2;
+				co_ptr[i*3+0] = -x_trajectory[i]/2.;
+				co_ptr[i*3+1] = -y_trajectory[i]/2.;
 				co_ptr[i*3+2] = weighting[i];
 				}
 			}

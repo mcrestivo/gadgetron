@@ -68,7 +68,7 @@
         <dll>gadgetron_mri_noncartesian</dll>
         <classname>CPUGridding_PrepRef</classname>
         <property><name>accelerationFactor</name><value>1.0</value></property>
-    </gadget>
+    </gadget> 
 
     <gadget>
         <name>CPUGriddingRecon</name>
@@ -76,10 +76,10 @@
         <classname>CPUGriddingReconGadget</classname>
         <property><name>verbose</name><value>true</value></property>	
         <property><name>perform_timing</name><value>true</value></property>
-      	<property><name>kernelWidthProperty</name><value>6</value></property>
+      	<property><name>kernelWidthProperty</name><value>5.5</value></property>
       	<property><name>oversamplingFactorProperty</name><value>1.25</value></property>
 	    <property><name>iterate</name><value>false</value></property>
-	    <property><name>iteration_max</name><value>1</value></property>
+	    <property><name>iteration_max</name><value>3</value></property>
 	    <property><name>iteration_tol</name><value>1e-5</value></property>
     </gadget>
     

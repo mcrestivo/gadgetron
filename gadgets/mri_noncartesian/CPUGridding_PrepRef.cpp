@@ -69,8 +69,8 @@ namespace Gadgetron{
 					//memcpy(&buffer_data(0,0,0,0,0,0,process_called_times_%acceleration_factor),&data_array(0,0,0,0,0,0,l),sizeof(std::complex<float>)*R0*E2*CHA*N*S*SLC);
 					//memcpy(&buffer_traj(0,0,0,0,0,0,process_called_times_%acceleration_factor),&traj_array(0,0,0,0,0,0,l),sizeof(float)*3*R0*E2*N*S*SLC);
 				}
-				write_nd_array(&buffer_data,"bufferdata.cplx");
-				write_nd_array(&buffer_traj,"buffertraj.real");
+				//write_nd_array(&buffer_data,"bufferdata.cplx");
+				//write_nd_array(&buffer_traj,"buffertraj.real");
 
 				if(process_called_times_ >= acceleration_factor){
 					prepared_ = true;
