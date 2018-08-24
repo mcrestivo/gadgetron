@@ -40,7 +40,7 @@ public:
         if (tolerance > 0) {
             tolerance_ = tolerance;
             scale_ = 0.5/tolerance_;
-            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_+1)));
+            uint64_t max_int = static_cast<uint64_t>(std::ceil(std::abs(scale_*max_val_)));
             bits_ = 0;
             while (max_int) {
                 bits_++;
@@ -95,19 +95,19 @@ public:
         return out;
     }
 
-    void deserialize(std::vector<uint8_t>& buffer)
+    int32_t deserialize(uint8_t* buffer_ptr)
     {
-        if (buffer.size() <= sizeof(CompressionHeader)) {
+       /*if (buffer.size() <= sizeof(CompressionHeader)) {
             throw std::runtime_error("Invalid buffer size");
-        }
+        }*/
 
         CompressionHeader h;
-        memcpy(&h, &buffer[0], sizeof(CompressionHeader));
+        memcpy(&h, buffer_ptr, sizeof(CompressionHeader));
         
         size_t bytes_needed = static_cast<size_t>(std::ceil((h.bits_*h.elements_)/8.0f));
-        if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
+        /*if (bytes_needed != (buffer.size()-sizeof(CompressionHeader))) {
             throw std::runtime_error("Incorrect number of bytes in buffer");
-        }
+        }*/
 
         this->bits_ = h.bits_;
         this->elements_ = h.elements_;
@@ -115,7 +115,9 @@ public:
         this->tolerance_ = 0.5/h.scale_;
         this->comp_.resize(bytes_needed,0);
 
-        memcpy(&comp_[0], &buffer[sizeof(CompressionHeader)], bytes_needed);
+        memcpy(&comp_[0], buffer_ptr+sizeof(CompressionHeader), bytes_needed);
+
+        return(bytes_needed+sizeof(CompressionHeader));
     }
 
 private:

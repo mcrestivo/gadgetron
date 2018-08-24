@@ -37,6 +37,13 @@ namespace Gadgetron {
       hoNDArray< std::complex<float> > noise_covariance_matrixf_once_;
       std::vector<unsigned int> scale_only_channels_;
 
+      bool is_compressed_data_;
+      std::string compression_algorithm_;
+      float compression_tolerance_;
+      float compression_sigma_reference_;
+	  float compression_noise_scaling_;
+      float compression_dwell_time_reference_us_;
+
       unsigned long long number_of_noise_samples_;
       unsigned long long number_of_noise_samples_per_acquisition_;
       float noise_dwell_time_us_;

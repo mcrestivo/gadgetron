@@ -146,86 +146,93 @@ namespace Gadgetron{
 
             if (m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_COMPRESSION1)) { //Is this ZFP compressed data
 
-#if defined GADGETRON_COMPRESSION_ZFP
-                
-                uint32_t comp_size = 0;
-                if ((recv_count = stream->recv_n(&comp_size, sizeof(uint32_t))) <= 0) {
-	            GERROR("Unable to read size of compressed data\n");
-                    m1->release();
-                    return 0;
-                }
+            #if defined GADGETRON_COMPRESSION_ZFP
 
-                char* comp_buffer = new char[comp_size];
-                if ((recv_count = stream->recv_n(comp_buffer, comp_size)) <= 0) {
-	            GERROR("Unable to read compressed data\n");
-                    m1->release();
-                    return 0;
-                }
+                for(int ch = 0; ch < m1->getObjectPtr()->active_channels; ch++){
 
+		            uint32_t comp_size = 0;
+		            if ((recv_count = stream->recv_n(&comp_size, sizeof(uint32_t))) <= 0) {
+			        GERROR("Unable to read size of compressed data\n");
+		                m1->release();
+		                return 0;
+		            }
 
-                zfp_type type = zfp_type_float;
-                zfp_field* field = NULL;
-                zfp_stream* zfp = NULL;
-                bitstream* cstream = NULL;
-                size_t zfpsize = comp_size;
-                
-                zfp = zfp_stream_open(NULL);
-                field = zfp_field_alloc();
-                
-                cstream = stream_open(comp_buffer, comp_size);
-                if (!cstream) {
-                    GERROR("Unable to open compressed stream\n");
-                    zfp_field_free(field);
-                    zfp_stream_close(zfp);
-                    stream_close(cstream);            
-                    delete [] comp_buffer;
-                    m1->release();
-                    return 0;
-                }
-                zfp_stream_set_bit_stream(zfp, cstream);
-                
-                zfp_stream_rewind(zfp);
-                if (!zfp_read_header(zfp, field, ZFP_HEADER_FULL)) {
-                    GERROR("Unable to read compressed stream header\n");
-                    zfp_field_free(field);
-                    zfp_stream_close(zfp);
-                    stream_close(cstream);            
-                    delete [] comp_buffer;
-                    m1->release();
-                    return 0;
-                }
-                
-                size_t nx = std::max(field->nx, 1u);
-                size_t ny = std::max(field->ny, 1u);
-                size_t nz = std::max(field->nz, 1u);
-                
-                if (nx*ny*nz != (m1->getObjectPtr()->number_of_samples*2*m1->getObjectPtr()->active_channels)) {
-                    GERROR("Size of decompressed stream does not match the acquisition header\n");
-                    GERROR("nx=%d, ny=%d, nz=%d, number_of_samples=%d, active_channels=%d\n", nx, ny, nz,  m1->getObjectPtr()->number_of_samples,  m1->getObjectPtr()->active_channels);
-                    zfp_field_free(field);
-                    zfp_stream_close(zfp);
-                    stream_close(cstream);            
-                    delete [] comp_buffer;
-                    m1->release();
-                    return 0;                
-                }
-                zfp_field_set_pointer(field, m2->getObjectPtr()->get_data_ptr());
-                
-                if (!zfp_decompress(zfp, field)) {
-                    GERROR("Unable to decompress stream\n");            
-                    zfp_field_free(field);
-                    zfp_stream_close(zfp);
-                    stream_close(cstream);            
-                    delete [] comp_buffer;
-                    m1->release();
-                    return 0;                
-                }
-            
-                zfp_field_free(field);
-                zfp_stream_close(zfp);
-                stream_close(cstream);            
-                delete [] comp_buffer;
+		            char* comp_buffer = new char[comp_size];
+		            if ((recv_count = stream->recv_n(comp_buffer, comp_size)) <= 0) {
+			        GERROR("Unable to read compressed data\n");
+		                m1->release();
+		                return 0;
+		            }
 
+		            zfp_type type = zfp_type_float;
+		            zfp_field* field = NULL;
+		            zfp_stream* zfp = NULL;
+		            bitstream* cstream = NULL;
+		            size_t zfpsize = comp_size;
+		            
+		            zfp = zfp_stream_open(NULL);
+		            field = zfp_field_alloc();
+
+		            cstream = stream_open(comp_buffer, comp_size);
+		            if (!cstream) {
+		                GERROR("Unable to open compressed stream\n");
+		                zfp_field_free(field);
+		                zfp_stream_close(zfp);
+		                stream_close(cstream);            
+		                delete [] comp_buffer;
+		                m1->release();
+		                return 0;
+		            }
+					
+		            zfp_stream_set_bit_stream(zfp, cstream);
+		            
+		            zfp_stream_rewind(zfp);
+		            if (!zfp_read_header(zfp, field, ZFP_HEADER_FULL)) {
+		                GERROR("Unable to read compressed stream header\n");
+		                zfp_field_free(field);
+		                zfp_stream_close(zfp);
+		                stream_close(cstream);            
+		                delete [] comp_buffer;
+		                m1->release();
+		                return 0;
+		            }
+
+		            size_t nx = std::max(field->nx, 1u);
+		            size_t ny = std::max(field->ny, 1u);
+		            size_t nz = std::max(field->nz, 1u);
+		            
+		            //if (nx*ny*nz != (m1->getObjectPtr()->number_of_samples*2*m1->getObjectPtr()->active_channels)) {
+					if (nx*ny*nz != (m1->getObjectPtr()->number_of_samples*2)) {
+		                GERROR("Size of decompressed stream does not match the acquisition header\n");
+		                GERROR("nx=%d, ny=%d, nz=%d, number_of_samples=%d, active_channels=%d\n", nx, ny, nz,  m1->getObjectPtr()->number_of_samples,  m1->getObjectPtr()->active_channels);
+		                zfp_field_free(field);
+		                zfp_stream_close(zfp);
+		                stream_close(cstream);            
+		                delete [] comp_buffer;
+		                m1->release();
+		                return 0;                
+		            }
+		            zfp_field_set_pointer(field, m2->getObjectPtr()->get_data_ptr()+m1->getObjectPtr()->number_of_samples*ch);
+		            
+		            if (!zfp_decompress(zfp, field)) {
+		                GERROR("Unable to decompress stream\n");            
+		                zfp_field_free(field);
+		                zfp_stream_close(zfp);
+		                stream_close(cstream);            
+		                delete [] comp_buffer;
+		                m1->release();
+		                return 0;                
+		            }
+		        
+		            zfp_field_free(field);
+		            zfp_stream_close(zfp);
+		            stream_close(cstream);            
+		            delete [] comp_buffer;
+				}
+	
+				int cha = m2->getObjectPtr()->get_size(1);
+				int samples = m2->getObjectPtr()->get_size(0);
+			
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION1);
 
@@ -239,6 +246,9 @@ namespace Gadgetron{
 #endif //GADGETRON_COMPRESSION_ZFP
 
             } else if (m1->getObjectPtr()->isFlagSet(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2)) {
+
+
+				//std::cout << "line = " << m1->getObjectPtr()->idx.kspace_encode_step_1 << std::endl;
                 //NHLBI Compression
                 uint32_t comp_size = 0;
                 if ((recv_count = stream->recv_n(&comp_size, sizeof(uint32_t))) <= 0) {
@@ -254,24 +264,32 @@ namespace Gadgetron{
                     return 0;
                 }
 
+				float* d_ptr = (float*)m2->getObjectPtr()->get_data_ptr();
+				size_t bytes_needed = 0;
+				size_t total_size = 0;
                 CompressedBuffer<float> comp;
-                comp.deserialize(comp_buffer);
+				while(bytes_needed < comp_size){
+		            bytes_needed += comp.deserialize(&comp_buffer[bytes_needed]);
+		            for (size_t i = 0; i < comp.size(); i++) {
+		                d_ptr[i+total_size] = comp[i]; //This uncompresses sample by sample into the uncompressed array
+		            }
+					total_size += comp.size();
+				}
 
-                if (comp.size() != m2->getObjectPtr()->get_number_of_elements()*2) { //*2 for complex
-	            GERROR("Mismatch between uncompressed data samples (%d) and expected number of samples (%d)\n", comp.size(), m2->getObjectPtr()->get_number_of_elements()*2);
+
+                if (total_size != m2->getObjectPtr()->get_number_of_elements()*2) { //*2 for complex
+	            GERROR("Mismatch between uncompressed data samples (%d) and expected number of samples (%d)\n", total_size, m2->getObjectPtr()->get_number_of_elements()*2);
                     m1->release();
                     return 0;
-                }
-
-                float* d_ptr = (float*)m2->getObjectPtr()->get_data_ptr();
-                for (size_t i = 0; i < comp.size(); i++) {
-                    d_ptr[i] = comp[i]; //This uncompresses sample by sample into the uncompressed array
                 }
 
                 //At this point the data is no longer compressed and we should clear the flag
                 m1->getObjectPtr()->clearFlag(ISMRMRD::ISMRMRD_ACQ_COMPRESSION2);
 
-            } else { 
+
+            }
+
+            else { 
                 //Uncompressed data
                 if ((recv_count =
                      stream->recv_n

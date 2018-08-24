@@ -87,9 +87,11 @@ namespace Gadgetron
                 float mean_sigma = 0.0;
                 float max_sigma = 0.0;
                 float min_sigma = std::numeric_limits<float>::max();
+                float diagonal[coils];
                 
                 for (size_t c = 0; c < coils; c++) {
                     float sigma = std::sqrt(std::real(noise_covariance_matrix[c*coils+c]));
+                    diagonal[c] = sigma;
                     mean_sigma += sigma;
                     if (sigma > max_sigma) max_sigma = sigma;
                     if (sigma < min_sigma) min_sigma = sigma;
@@ -105,6 +107,9 @@ namespace Gadgetron
                 m1->getObjectPtr()->append("mean_sigma",mean_sigma);
                 m1->getObjectPtr()->append("channels", static_cast<long>(coils));
                 m1->getObjectPtr()->append("status", "success");
+                for(int i = 0; i < coils; i++){
+					m1->getObjectPtr()->append("diagonal",diagonal[i]);
+				}
             }
             
             // send the found dependencies
