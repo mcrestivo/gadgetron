@@ -398,7 +398,7 @@ namespace Gadgetron {
             for (size_t i = 0; i <  c; i++) {
 				float absolute_compression_variance = std::real(dptr[i*c+i])*(1/std::pow((1-compression_tolerance_),2)-1);
 				std::cout << compression_noise_scaling_ << std::endl;
-				dptr[i*c+i] += std::complex<float>(absolute_compression_variance/2,0.0);
+				dptr[i*c+i] += std::complex<float>(absolute_compression_variance,0.0);
 				
 				std::cout << "acq dwell time = " << acquisition_dwell_time_us_ << std::endl;
 				std::cout << "noise dwell time = " << noise_dwell_time_us_ << std::endl;

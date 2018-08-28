@@ -1336,7 +1336,7 @@ public:
 			std::vector<uint8_t> serialized_buffer;
 			int segments = 5;	
 			int segment_size = std::ceil(acq.getHead().number_of_samples*2.0/segments);
-			float noise_bw_scale_factor_ = (float)std::sqrt(2*acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
+			float noise_bw_scale_factor_ = (float)std::sqrt(acq.getHead().sample_time_us/stat.noise_dwell_time_us*stat.relative_receiver_noise_bw);
 			for(int ch = 0; ch < acq.getHead().active_channels; ch++){
 				//Determine tolerance
 				float sigma = stat.sigma_diagonal[ch]/std::sqrt(2.);
