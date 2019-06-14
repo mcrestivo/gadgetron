@@ -49,7 +49,7 @@ namespace Gadgetron {
 		oversampling_factor_ = gridding_oversampling_factor.value();
 		
 		image_dims_.push_back(matrixsize.x);
-		image_dims_.push_back(matrixsize.y);
+		image_dims_.push_back(matrixsize.x);
 		
 		//Figure out what the oversampled matrix size should be taking the warp size into consideration. 
 		unsigned int warp_size = cudaDeviceManager::Instance()->warp_size();
@@ -161,6 +161,7 @@ namespace Gadgetron {
 			    //memcpy(imarray.data_.get_data_ptr(), host_img->get_data_ptr(), sizeof(float)*2*elements);
 
             }
+	    write_nd_array(&imarray.data_,"imagearray.cplx");
 
 		    this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 		    this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);
@@ -207,13 +208,25 @@ namespace Gadgetron {
 			    
 
 			    hoNDArray<float> mag(rep_array.get_dimensions());
+			    hoNDArray<float> real(rep_array.get_dimensions());
 			    hoNDArray<float> mean(image_dims_[0],image_dims_[1]);
 			    hoNDArray<float> std(image_dims_[0],image_dims_[1]);
+
+			    /* real = *(Gadgetron::real(&rep_array));
+			    Gadgetron::sum_over_dimension(real,mean,2);
+			    Gadgetron::scal(1.0f/replicas.value(), mean);
 			    
+			    real -= mean;
+			    real *= real;
+			    
+			    Gadgetron::sum_over_dimension(real,std,2);
+			    Gadgetron::scal(1.0f/(replicas.value()-1), std);
+			    Gadgetron::sqrt_inplace(&std);
+			    */
 			    Gadgetron::abs(rep_array, mag);
 			    Gadgetron::sum_over_dimension(mag,mean,2);
 			    Gadgetron::scal(1.0f/replicas.value(), mean);
-			    
+
 			    mag -= mean;
 			    mag *= mag;
 			    
@@ -228,6 +241,7 @@ namespace Gadgetron {
                 for(size_t n = 0; n < N; n++){
 			        memcpy(&imarray.data_(0,0,0,0,n,0,0), mean_cplx.get_data_ptr(), sizeof(std::complex<float>)*mean_cplx.get_number_of_elements());
 			    }
+		write_nd_array(&imarray.data_, "imagearray.cplx");
 			    this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 			    this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, image_series.value() + 100 * ((int)e + 3), GADGETRON_IMAGE_SNR_MAP);
 		    }

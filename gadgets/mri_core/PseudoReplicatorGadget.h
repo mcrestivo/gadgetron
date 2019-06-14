@@ -15,6 +15,7 @@ namespace Gadgetron {
 class EXPORTGADGETSMRICORE PseudoReplicatorGadget : public Gadget1<IsmrmrdReconData>{
 public:
 	GADGET_PROPERTY(repetitions,int,"Number of pseudoreplicas to produce",10);
+	GADGET_PROPERTY(slice,int,"Slice to replicate",0);
 	PseudoReplicatorGadget()  ;
 	virtual ~PseudoReplicatorGadget();
 
@@ -23,6 +24,7 @@ public:
 
 private:
 	int repetitions_;
+	int slice_;
 };
 
 } /* namespace Gadgetron */

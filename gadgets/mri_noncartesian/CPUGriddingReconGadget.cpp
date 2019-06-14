@@ -111,7 +111,11 @@ namespace Gadgetron{
 				boost::make_shared<hoNDArray<float>>(std::get<1>(trajDcw).get());
 			boost::shared_ptr<hoNDArray<floatd2>> traj_host_ = 
 				boost::make_shared<hoNDArray<floatd2>>(std::get<0>(trajDcw).get());
-			
+
+			if(calcDcw.value()){
+			  dcw_host_ = IterateForDcw(traj_host_.get(), dcw_host_.get(), RO, E1);
+			}
+
 			//if(recon_bit_->rbit_[e].ref_){// && !csm_.get_number_of_elements()){
 				//auto ref_images = computeCsm((IsmrmrdDataBuffered*)&(*recon_bit_->rbit_[e].ref_));
 			//}
@@ -131,7 +135,7 @@ namespace Gadgetron{
 
 			// Define regularization image operator
 			boost::shared_ptr< cuImageOperator<float_complext> > R_( new cuImageOperator<float_complext>() );
-			R_->set_weight( .3 );
+			R_->set_weight( .2 );
 			
 			boost::shared_ptr< cuNDArray<float_complext> > reg_image(new cuNDArray<float_complext> ( reg_host_ptr.get() ));
 			R_->compute(reg_image.get());
@@ -190,7 +194,7 @@ namespace Gadgetron{
 				memcpy(&imarray.data_(0,0,0,0,n,0,0), host_image.get_data_ptr(), sizeof(float)*2*host_image.get_number_of_elements());
 
 			}
-			//write_nd_array(&imarray.data_, "imagearray.cplx");
+			write_nd_array(&imarray.data_, "imagearray.cplx");
 			this->compute_image_header(recon_bit_->rbit_[e], imarray, e);
 			this->send_out_image_array(recon_bit_->rbit_[e], imarray, e, ((int)e + 1), GADGETRON_IMAGE_REGULAR);		
 			
@@ -435,8 +439,7 @@ namespace Gadgetron{
 		auto ptr = dcwTraj->get_data_ptr();
 		for(unsigned int i = 0; i <= dcwTraj->get_number_of_elements()/3; i++){
 			trajPtr[i] = floatd2(ptr[i*3],ptr[i*3+1]);
-            if(i%dims[1] == 0) dcwPtr[i] = ptr[i*3+2]/100.;
-            else dcwPtr[i] = ptr[i*3+2];
+			dcwPtr[i] = ptr[i*3+2];
 		}
 		return std::make_tuple(traj, dcw);
 	}
@@ -470,6 +473,9 @@ namespace Gadgetron{
 		boost::shared_ptr<hoNDArray<floatd2>> refTraj = 
 			boost::make_shared<hoNDArray<floatd2>>(std::get<0>(refTrajDcw).get());
 
+		if(calcDcw.value()){
+		  refDcw = IterateForDcw(refTraj.get(), refDcw.get(), RO, E1);
+		}
 		std::vector<size_t> newOrder = {0, 1, 2, 4, 5, 6, 3};
 		refdata = *permute(&refdata,&newOrder);
 		hoNDArray<std::complex<float>> images(imageDimsOs[0], imageDimsOs[1], refdata.get_size(6));	
@@ -496,6 +502,17 @@ namespace Gadgetron{
 		Gadgetron::coil_map_2d_Inati(images,csmOs_, 14, 5);
 		Gadgetron::coil_combine(images, csmOs_, 2, argOs_);
 		* */
+		if(is_inout.value()){
+		  for(int i = 0; i < refdata.get_number_of_elements(); i++){
+		    refdata[i] *= exp(-.5*pow(float(((i%RO)-RO/2.)/(RO/10.)),2.));
+		  }
+		}
+		else{
+		  for(int i = 0; i < refdata.get_number_of_elements(); i++){
+		    refdata[i] *= exp(-.5*pow(float(((i%RO))/(RO/3.)),2.));
+		  }
+		}
+		
 		boost::shared_ptr< cuNDArray<floatd2> > traj(new cuNDArray<floatd2> ( refTraj.get() ));
 		boost::shared_ptr< cuNDArray<float> > dcw(new cuNDArray<float> ( refDcw.get() ));
 		boost::shared_ptr< cuNDArray<float_complext> >device_samples(new cuNDArray<float_complext> ( (hoNDArray<float_complext>*)&refdata ));
@@ -529,10 +546,124 @@ namespace Gadgetron{
 			}
 		}
 */
-		//write_nd_array(&csm_,"csm.cplx");
-		//write_nd_array(&arg_,"arg.cplx");
+		write_nd_array(&csm_,"csm.cplx");
+		write_nd_array(&arg_,"arg.cplx");
 		return std::make_tuple(csm_,arg_);
-	}	
+	}
+
+
+  boost::shared_ptr<hoNDArray<float>> CPUGriddingReconGadget::IterateForDcw( hoNDArray<floatd2> *traj, hoNDArray<float> *dcw, size_t samples, size_t Ninterleaves ) {
+
+    boost::shared_ptr< cuNDArray<floatd2> > cu_traj(new cuNDArray<floatd2>(traj));
+	  //Setup plan
+	  cuNFFT_plan<float,2> nfft_dcw_plan_;
+	  nfft_dcw_plan_.setup( uint64d2(imageDims[0], imageDims[1]),  uint64d2(imageDimsOs[0], imageDimsOs[1]), kernelWidth );
+	  nfft_dcw_plan_.preprocess( cu_traj.get(), cuNFFT_plan<float,2>::NFFT_PREP_ALL);
+	  //initialize arrays
+	  boost::shared_ptr<hoNDArray<complext<float>>> DCW = Gadgetron::real_to_complex<complext<float>>( dcw );;
+	  //DCW.get()->fill(complext<float>(1.0,0.0));
+	  //real_to_complex( *dcw, *DCW.get() );
+	  cuNDArray<complext<float>> temp; temp.create(imageDimsOs[0], imageDimsOs[1]);
+	  cuNDArray<complext<float>> in;
+	  hoNDArray<complext<float>> in_host;
+	  hoNDArray<complext<float>> in_host2;
+	  in_host.create(traj->get_number_of_elements());
+	  in_host2.create(traj->get_number_of_elements());
+	  cuNDArray<complext<float>> ones;
+	  boost::shared_ptr<hoNDArray<complext<float>>> DCW2(new hoNDArray<complext<float>> ( traj->get_number_of_elements()  ));
+       	  boost::shared_ptr<hoNDArray<float>> DCWout(new hoNDArray<float> ( traj->get_number_of_elements()  ));
+	  DCW2.get()->fill(complext<float>(1.0,0.0));
+	  in = *(DCW2.get());
+	  ones = *(DCW2.get());
+	  cuNDArray<complext<float>> out; out.create( traj->get_number_of_elements() );
+	  cuNDArray<complext<float>> J1; J1.create( traj->get_number_of_elements() );
+	  //iterate
+	  float scale;
+	  write_nd_array( &in, "DCW_in0.cplx");
+	  auto dims = *in.get_dimensions();
+	  for( int j = 0; j < 50; j++ ){
+	    
+	    nfft_dcw_plan_.convolve( &in, &temp, nullptr, cuNFFT_plan<float,2>::NFFT_CONV_NC2C, false, true );
+	    scale = asum(&temp)/traj->get_number_of_elements();
+	    temp /= scale;
+            nfft_dcw_plan_.convolve( &temp, &out, nullptr, cuNFFT_plan<float,2>::NFFT_CONV_C2NC, false, true );
+
+	    scale = asum(&out)/traj->get_number_of_elements();
+	    out /= scale;
+	    in /= out;
+	    scale = asum(&in)/traj->get_number_of_elements();
+	    in /= scale;
+
+	    in_host = *in.to_host();
+	    in_host2 = *in.to_host();
+
+	    for( int il = 0; il < Ninterleaves; il++){
+	      for( int s = 20; s < samples - 20; s++){
+	     	  in_host2[il*samples+s] = in_host[il*samples+s-2]/2.+in_host[il*samples+s-1]+in_host[il*samples+s]+in_host[il*samples+s+1]+in_host[il*samples+s+2]/2.;
+		  in_host2[il*samples+s] /= 4.;
+	      }
+	    }
+
+	    /*	  hoNDArray<complext<float>> dcw_avg(traj->get_number_of_elements()/Ninterleaves);
+	  dcw_avg.fill(0.0);
+	  for(int il = 0; il < Ninterleaves; il++){
+	    for( int s = 0; s < samples; s++){
+	      dcw_avg[s] += in_host2[s+il*samples]/float(Ninterleaves);
+	    }
+	  }
+	  for(int il = 0; il < Ninterleaves; il++){
+	    memcpy(&in_host2[il*samples],&dcw_avg[0],sizeof(complext<float>)*samples);
+	  }
+	    	  
+	    if( j < 50 ){
+	      for( int ii = 20; ii < in_host.get_number_of_elements()-20; ii++){
+	     	  in_host2[ii] = in_host[ii-1]+in_host[ii]+in_host[ii+1];
+		  in_host2[ii] /= 3;
+	      } 
+	    }
+	    in = in_host2;
+	    */
+	    //std::cout << scale << std::endl;
+	    //out /= std::sqrt(scale);
+	    //in /= out;
+	    //scale = asum(&in)/traj->get_number_of_elements();
+	    //in /= scale;
+	    //std::cout << scale << std::endl;
+	    std::cout << "iteration " << j << std::endl;
+	  }
+
+	  //circular k-space filter
+	  float* kd2 = (float*)traj->get_data_ptr();
+	  float abs_k;
+	  for( int ii = 0; ii < in_host.get_number_of_elements(); ii++){
+	    abs_k = std::sqrt(kd2[2*ii]*kd2[2*ii]+kd2[2*ii+1]*kd2[2*ii+1]);
+	    in_host2[ii] *= .5+1./M_PI*atan(100.*(.5-abs_k)/.5);
+	    //std::cout << .5+1./M_PI*atan(100.*(.45-abs_k)/.45) << std::endl;
+	    //std::cout << abs_k << std::endl;
+	  }
+
+	  //average all interleaves
+	  hoNDArray<complext<float>> dcw_avg(traj->get_number_of_elements()/Ninterleaves);
+	  dcw_avg.fill(0.0);
+	  for(int il = 0; il < Ninterleaves; il++){
+	    for( int s = 0; s < samples; s++){
+	      dcw_avg[s] += in_host2[s+il*samples]/float(Ninterleaves);
+	    }
+	  }
+	  for(int il = 0; il < Ninterleaves; il++){
+	    memcpy(&in_host2[il*samples],&dcw_avg[0],sizeof(complext<float>)*samples);
+	    }
+	  
+	  in = in_host2;
+
+	  write_nd_array( &in, "DCW_in.cplx");
+	  write_nd_array( &J1, "J1.cplx");
+	  write_nd_array( &out, "DCW_out.cplx");
+	  //std::cout << "crash before complex to real" << std::endl;
+	  Gadgetron::abs( *in.to_host(), *(DCWout.get()) );
+          //std::cout << "crash after complex to real" << std::endl;
+	  return DCWout;
+	}
 
 	GADGET_FACTORY_DECLARE(CPUGriddingReconGadget);
 }

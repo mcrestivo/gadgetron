@@ -159,8 +159,8 @@ namespace Gadgetron{
        \param[in] accumulate specifies whether the result is added to the output (accumulation) or if the output is overwritten.
     */
     void convolve( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, cuNDArray<REAL> *dcw,
-                   NFFT_conv_mode mode, bool accumulate = false );
-    
+                   NFFT_conv_mode mode, bool accumulate = false, bool sqrt_kernel = false );
+
     /**
        Enum specifying the direction of the NFFT standalone FFT.
     */
@@ -245,8 +245,8 @@ namespace Gadgetron{
     void compute_NFFTH_C2NC( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out );
 
     // Dedicated convolutions
-    void convolve_NFFT_C2NC( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, bool accumulate );
-    void convolve_NFFT_NC2C( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, bool accumulate );
+  void convolve_NFFT_C2NC( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, bool accumulate, bool sqrt_kernel = false );
+  void convolve_NFFT_NC2C( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, bool accumulate, bool sqrt_kernel = false );
   
     // Internal utility
     void image_wrap( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out, bool accumulate );

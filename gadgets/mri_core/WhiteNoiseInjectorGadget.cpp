@@ -201,6 +201,17 @@ int WhiteNoiseInjectorGadget::process_config(ACE_Message_Block* mb)
 
 int WhiteNoiseInjectorGadget::process(GadgetContainerMessage<ISMRMRD::AcquisitionHeader>* m1, GadgetContainerMessage< hoNDArray< std::complex<float> > >* m2)
 {
+  for(int REP = 0; REP < 10; REP++){
+
+    auto m1_copy = *m1->getObjectPtr();
+    auto cm1 = new GadgetContainerMessage<ISMRMRD::AcquisitionHeader>();
+    *cm1->getObjectPtr() = m1_copy;
+    auto m2_copy = *m2->getObjectPtr();
+    auto cm2 = new GadgetContainerMessage< hoNDArray< std::complex<float> > >();
+    *cm2->getObjectPtr() = m2_copy;
+
+    auto traj = m2->cont();
+    
     bool is_noise = ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_NOISE_MEASUREMENT).isSet(m1->getObjectPtr()->flags);
     bool is_scc_correction = ISMRMRD::FlagBit(ISMRMRD::ISMRMRD_ACQ_IS_SURFACECOILCORRECTIONSCAN_DATA).isSet(m1->getObjectPtr()->flags);
 
@@ -249,7 +260,7 @@ int WhiteNoiseInjectorGadget::process(GadgetContainerMessage<ISMRMRD::Acquisitio
 
             try
             {
-                Gadgetron::add(*m2->getObjectPtr(), noise_fl_, *m2->getObjectPtr());
+                Gadgetron::add(*cm2->getObjectPtr(), noise_fl_, *cm2->getObjectPtr());
             }
             catch(...)
             {
@@ -258,12 +269,18 @@ int WhiteNoiseInjectorGadget::process(GadgetContainerMessage<ISMRMRD::Acquisitio
             }
         }
     }
-
-    if (this->next()->putq(m1) == -1) 
+    std::cout << REP << std::endl;
+    std::cout << cm1->getObjectPtr()->idx.kspace_encode_step_1 << std::endl;
+    std::cout << cm1->getObjectPtr()->idx.phase << std::endl;
+    cm1->getObjectPtr()->idx.slice = REP;
+    cm2->cont(traj);
+    cm1->cont(cm2);
+    if (this->next()->putq(cm1) == -1) 
     {
       GERROR("WhiteNoiseInjectorGadget::process, passing data on to next gadget");
       return -1;
     }
+  }
 
     return GADGET_OK;
 }

@@ -618,7 +618,7 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::mult_MH_M( cuNDArray<complext<REAL> > *i
 
 template<class REAL, unsigned int D, bool ATOMICS> void
 Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve( cuNDArray<complext<REAL> > *in, cuNDArray<complext<REAL> > *out,
-                                                  cuNDArray<REAL> *dcw, NFFT_conv_mode mode, bool accumulate )
+                                                  cuNDArray<REAL> *dcw, NFFT_conv_mode mode, bool accumulate, bool sqrt_kernel )
 {
   unsigned char components;
 
@@ -666,7 +666,7 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve( cuNDArray<complext<REAL> > *in
   switch(mode){
 
   case NFFT_CONV_C2NC:
-  	convolve_NFFT_C2NC( in_int, out_int, accumulate );
+        convolve_NFFT_C2NC( in_int, out_int, accumulate, sqrt_kernel );
   	if( dcw_int ) *out_int *= *dcw_int;
     break;
     
@@ -680,8 +680,7 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve( cuNDArray<complext<REAL> > *in
     else{
       working_samples = in_int;
     }
-    
-    _convolve_NFFT_NC2C<REAL,D,ATOMICS>::apply( this, working_samples, out_int, accumulate );
+    _convolve_NFFT_NC2C<REAL,D,ATOMICS>::apply( this, working_samples, out_int, accumulate, sqrt_kernel );
     
     if( dcw_int ){
       delete working_samples; working_samples = 0x0;
@@ -695,6 +694,7 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve( cuNDArray<complext<REAL> > *in
   restore<complext<REAL>, complext<REAL>, REAL>
     (old_device, out, out, out_int, in, in_int, dcw, dcw_int );
 }
+
 
 template<class REAL, unsigned int D, bool ATOMICS> void
 Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::fft(cuNDArray<complext<REAL> > *data, NFFT_fft_mode mode, bool do_scale )
@@ -1021,7 +1021,7 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::compute_NFFT_NC2C( cuNDArray<complext<RE
 }
 
 template<class REAL, unsigned int D, bool ATOMICS> void
-Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve_NFFT_C2NC( cuNDArray<complext<REAL> > *image, cuNDArray<complext<REAL> > *samples, bool accumulate )
+Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve_NFFT_C2NC( cuNDArray<complext<REAL> > *image, cuNDArray<complext<REAL> > *samples, bool accumulate, bool sqrt_kernel )
 {
   // private method - no consistency check. We trust in ourselves.
   
@@ -1082,16 +1082,16 @@ Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve_NFFT_C2NC( cuNDArray<complext<R
         raw_pointer_cast(&(*trajectory_positions)[0]), 
         image->get_data_ptr()+repetition*prod(matrix_size_os)*number_of_frames*domain_size_coils,
         samples->get_data_ptr()+repetition*number_of_samples*number_of_frames*domain_size_coils, 
-        double_warp_size_power, REAL(0.5)*W, REAL(1)/(W), accumulate, matrix_size_os_real );
+        double_warp_size_power, REAL(0.5)*W, REAL(1)/(W), accumulate, matrix_size_os_real, sqrt_kernel );
 
     CHECK_FOR_CUDA_ERROR();    
   }
 }
 
 template<class REAL, unsigned int D, bool ATOMICS> void
-Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve_NFFT_NC2C( cuNDArray<complext<REAL> > *image, cuNDArray<complext<REAL> > *samples, bool accumulate )
+Gadgetron::cuNFFT_plan<REAL,D,ATOMICS>::convolve_NFFT_NC2C( cuNDArray<complext<REAL> > *image, cuNDArray<complext<REAL> > *samples, bool accumulate, bool sqrt_kernel )
 {
-  _convolve_NFFT_NC2C<REAL,D,ATOMICS>::apply( this, image, samples, accumulate );
+  _convolve_NFFT_NC2C<REAL,D,ATOMICS>::apply( this, image, samples, accumulate, sqrt_kernel );
 }
 
 template<unsigned int D> struct
@@ -1099,7 +1099,8 @@ _convolve_NFFT_NC2C<float,D,true>{ // True: use atomic operations variant
   static bool apply( cuNFFT_plan<float,D,true> *plan, 
                      cuNDArray<complext<float> > *samples, 
                      cuNDArray<complext<float> > *image, 
-                     bool accumulate )
+                     bool accumulate,
+		     bool sqrt_kernel )
   {   
     //
     // Bring in some variables from the plan
@@ -1182,7 +1183,7 @@ _convolve_NFFT_NC2C<float,D,true>{ // True: use atomic operations variant
           raw_pointer_cast(&(*trajectory_positions)[0]), 
           samples->get_data_ptr()+repetition*number_of_samples*number_of_frames*domain_size_coils,
           image->get_data_ptr()+repetition*prod(matrix_size_os)*number_of_frames*domain_size_coils,
-          double_warp_size_power, float(0.5)*W, float(1)/(W), matrix_size_os_real );
+          double_warp_size_power, float(0.5)*W, float(1)/(W), matrix_size_os_real, sqrt_kernel );
     }
     
     CHECK_FOR_CUDA_ERROR();
@@ -1201,7 +1202,8 @@ _convolve_NFFT_NC2C<REAL,D,false>{ // False: use non-atomic operations variant
   static void apply( cuNFFT_plan<REAL,D,false> *plan,
                      cuNDArray<complext<REAL> > *samples, 
                      cuNDArray<complext<REAL> > *image, 
-                     bool accumulate )
+                     bool accumulate,
+		     bool sqrt_kernel)
   {
     // Bring in some variables from the plan
     
@@ -1293,7 +1295,7 @@ _convolve_NFFT_NC2C<REAL,D,false>{ // False: use non-atomic operations variant
           _tmp.get_data_ptr()+repetition*prod(matrix_size_os+matrix_size_wrap)*number_of_frames*domain_size_coils,
           samples->get_data_ptr()+repetition*number_of_samples*number_of_frames*domain_size_coils, 
           raw_pointer_cast(&(*tuples_last)[0]), raw_pointer_cast(&(*bucket_begin)[0]), raw_pointer_cast(&(*bucket_end)[0]),
-          double_warp_size_power, REAL(0.5)*W, REAL(1)/(W), matrix_size_os_real );
+          double_warp_size_power, REAL(0.5)*W, REAL(1)/(W), matrix_size_os_real, sqrt_kernel );
     }
     
     CHECK_FOR_CUDA_ERROR();

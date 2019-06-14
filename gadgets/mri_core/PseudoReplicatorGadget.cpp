@@ -21,38 +21,44 @@ PseudoReplicatorGadget::~PseudoReplicatorGadget() {
 int PseudoReplicatorGadget::process_config(ACE_Message_Block*) {
 
 	repetitions_ = repetitions.value();
+	slice_ = slice.value();
 	return GADGET_OK;
 }
 
 int PseudoReplicatorGadget::process(GadgetContainerMessage<IsmrmrdReconData>* m) {
 
-	std::mt19937 engine;
-	std::normal_distribution<float> distribution;
+        std::random_device rd;
+	std::mt19937 engine(rd());
+	std::normal_distribution<float> distribution(0.0,1.0);
 
 	auto m_copy = *m->getObjectPtr();
 	//First just send the normal data to obtain standard image
 	if (this->next()->putq(m) == GADGET_FAIL)
 			return GADGET_FAIL;
 
-	//Now for the noisy projections
-	for (int i =0; i < repetitions_; i++){
+	ISMRMRD::AcquisitionHeader* acqhdr = &(m->getObjectPtr()->rbit_[0].data_.headers_(0));
 
-		auto cm = new GadgetContainerMessage<IsmrmrdReconData>();
-		*cm->getObjectPtr() = m_copy;
-		auto & datasets = cm->getObjectPtr()->rbit_;
+	if(acqhdr->idx.slice == slice_){
+	  //Now for the noisy projections
+	  for (int i =0; i < repetitions_; i++){
 
-		for (auto & buffer : datasets){
-			auto & data = buffer.data_.data_;
-			auto dataptr = data.get_data_ptr();
-			for (size_t k =0; k <  data.get_number_of_elements(); k++){
-				dataptr[k] += std::complex<float>(distribution(engine),distribution(engine));
-			}
-		}
-		GDEBUG("Sending out Pseudoreplica\n");
+	    auto cm = new GadgetContainerMessage<IsmrmrdReconData>();
+	    *cm->getObjectPtr() = m_copy;
+	    auto & datasets = cm->getObjectPtr()->rbit_;
 
-		if (this->next()->putq(cm) == GADGET_FAIL)
-			return GADGET_FAIL;
+	    for (auto & buffer : datasets){
+	      auto & data = buffer.data_.data_;
+	      auto dataptr = data.get_data_ptr();
+	      for (size_t k =0; k <  data.get_number_of_elements(); k++){
+		dataptr[k] += std::complex<float>(distribution(engine),distribution(engine));
+	      }
+	    }
+	    GDEBUG("Sending out Pseudoreplica\n");
 
+	    if (this->next()->putq(cm) == GADGET_FAIL)
+	      return GADGET_FAIL;
+
+	  }
 	}
 	return GADGET_OK;
 

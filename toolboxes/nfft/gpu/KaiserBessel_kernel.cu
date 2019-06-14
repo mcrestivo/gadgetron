@@ -73,6 +73,18 @@ KaiserBessel( double u, double matrix_size_os, double one_over_W, double beta )
   return ret;
 }
 
+__inline__ __device__ double
+KaiserBesselSqrt( double u, double matrix_size_os, double one_over_W, double beta )
+{
+  double _tmp = 2.0*u*one_over_W;
+  double tmp = _tmp*_tmp;
+  double arg = beta*std::sqrt(1.0-tmp);
+  double bessi = bessi0(arg);
+  double ret = matrix_size_os*bessi*one_over_W;
+  return sqrt(ret);
+}
+
+
 __inline__ __device__ float
 KaiserBessel( float u, float matrix_size_os, float one_over_W, float beta )
 {

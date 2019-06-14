@@ -193,7 +193,7 @@ int EPICorrGadget::process(
           // this is the average phase difference between consecutive odd or even navigators
           for (p=0; p<numNavigators_-2; p++)
           {
-              ctemp += arma::sum(arma::conj(navdata_.slice(p)) % navdata_.slice(p+2),1);
+              ctemp += arma::sum(navdata_.slice(p) % navdata_.slice(p+2),1);
           }
 
           // Perform the fit:

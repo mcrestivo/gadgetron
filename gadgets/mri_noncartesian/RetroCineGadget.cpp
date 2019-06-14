@@ -46,7 +46,8 @@ namespace Gadgetron{
         //num_interleaves = h.encodingLimits.kspace_encode_step_1.maximum+1;	
         
         ISMRMRD::Encoding encoding = h.encoding[0];
-        space_matrix_offset_E1 = (int16_t)encoding.encodedSpace.matrixSize.y / 2 - (int16_t)encoding.encodingLimits.kspace_encoding_step_1->center;	
+        space_matrix_offset_E1 = (int16_t)encoding.encodedSpace.matrixSize.y / 2 - (int16_t)encoding.encodingLimits.kspace_encoding_step_1->center;
+	accFactor = encoding.parallelImaging->accelerationFactor.kspace_encoding_step_1;
 		
 		return GADGET_OK;
 	}
@@ -78,14 +79,14 @@ namespace Gadgetron{
 			std::vector<float> recon_times_ratio;
 			std::vector<float> cpt_ratio;
 			for(size_t i=0; i<num_phases; i++){
-				recon_times_ratio.push_back((float)(i+.5)/(num_phases+1));
+				recon_times_ratio.push_back(2.*(float)(i+.5)/(num_phases));
 			}
 			
 			ISMRMRD::AcquisitionHeader* acqhdr;
 			
 			//get k_lines
 			std::vector<size_t> k_lines;
-			for(size_t i=0; i<E1+space_matrix_offset_E1; i++){
+			for(size_t i=0; i<E1; i++){
 				acqhdr = &recon_bit_->rbit_[e].data_.headers_(i,0,0,0,0);
 				if(acqhdr->acquisition_time_stamp != 0){
 					k_lines.push_back(i);
@@ -97,27 +98,48 @@ namespace Gadgetron{
 			}
 			
 			//Iterate over interleaves
-			for(size_t s=0; s<E1; s++){
+			for(size_t s=0; s<k_lines.size(); s++){
 				
 				size_t k = k_lines[s];
-				std::cout << "s = " << s <<std::endl;
+				std::cout << "k = " << k <<std::endl;
 				std::cout << "E1 = " << E1 <<std::endl;
 				if( k > E1 ){
 					break;
 				}
 				//Get physio times and convert to ratio
 				float cpt_max = 0.0;
+				float HR = 0.0;
+				float sys_dur = 0.0;
+				float dias_dur = 0.0;
 				for(size_t n=0; n<N; n++){
 					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,n,0,0);
-					if(acqhdr->physiology_time_stamp[0] > cpt_max){
-						cpt_max = acqhdr->physiology_time_stamp[0];
+					if(acqhdr->physiology_time_stamp[0]*2.5 > cpt_max){
+						cpt_max = acqhdr->physiology_time_stamp[0]*2.5;
 					}
 				}
+				if(cpt_max>0){
+				  HR = 60000/(cpt_max);
+				}
+				else{
+				  HR = 60;
+				  cpt_max = 1000;
+				}
+				std::cout << "HR = " << HR << std::endl;
+				sys_dur = 546-2.1*HR;
+				dias_dur = cpt_max-sys_dur;
+				std::cout << "sys = " << sys_dur << std::endl;
+				std::cout << "dias = " << dias_dur << std::endl;
 				cpt_ratio.clear();
 				for(size_t n=0; n<N; n++){
 					acqhdr = &recon_bit_->rbit_[e].data_.headers_(k,0,n,0,0);
 					if(acqhdr->acquisition_time_stamp != 0){
-						cpt_ratio.push_back((acqhdr->physiology_time_stamp[0])/cpt_max);
+					  std::cout << acqhdr->physiology_time_stamp[0]*2.5/sys_dur << std::endl;
+					  if((acqhdr->physiology_time_stamp[0]*2.5)/sys_dur <= 1.0){
+						cpt_ratio.push_back((acqhdr->physiology_time_stamp[0]*2.5)/sys_dur);
+					  }
+					  else if((acqhdr->physiology_time_stamp[0]*2.5)/sys_dur > 1.0){
+						cpt_ratio.push_back(1.+(acqhdr->physiology_time_stamp[0]*2.5-sys_dur)/dias_dur);
+					  }
 					}else{
 						cpt_ratio.push_back(-1);
 					}					
@@ -132,7 +154,7 @@ namespace Gadgetron{
 					float end_time_diff = 1;
 					float curr_recon_phase = recon_times_ratio[p];//+bitreversed_order[k]*.017/3;
 					
-					if(curr_recon_phase > 1.0) curr_recon_phase -= 1.0;
+					if(curr_recon_phase > 2.0) curr_recon_phase -= 1.0;
 					
 					//Iterate over phases
 					for(size_t n=0; n<N; n++){	
@@ -162,11 +184,11 @@ namespace Gadgetron{
 						start_ind = N-1;
 					}
 					
-					std::cout << start_ind << std::endl;
-					std::cout << end_ind << std::endl;
-					std::cout << cpt_ratio[start_ind] << std::endl;
-					std::cout << curr_recon_phase << std::endl;
-					std::cout << cpt_ratio[end_ind] << std::endl;
+					//std::cout << start_ind << std::endl;
+					//std::cout << end_ind << std::endl;
+					//std::cout << cpt_ratio[start_ind] << std::endl;
+					//std::cout << curr_recon_phase << std::endl;
+					//std::cout << cpt_ratio[end_ind] << std::endl;
 					
 					//Interpolate and copy to output data array
 					for(size_t c=0; c<CHA; c++){
@@ -192,7 +214,7 @@ namespace Gadgetron{
 			}
 
 			//Pass data downstream
-			if(acqhdr->idx.kspace_encode_step_1+1+space_matrix_offset_E1 >= E1){// || acqhdr->idx.kspace_encode_step_1 == 0){
+			if((acqhdr->idx.kspace_encode_step_1+1+space_matrix_offset_E1) >= E1/accFactor){// || acqhdr->idx.kspace_encode_step_1 == 0){
 				recon_bit_->rbit_[e].data_.data_ = data_out;
 				//write_nd_array(&data_out, "data_out.cplx");
 				if(acqhdr->trajectory_dimensions > 0){

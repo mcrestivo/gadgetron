@@ -43,9 +43,11 @@ namespace Gadgetron{
 		GADGET_PROPERTY(kernelWidthProperty, float, "Kernel width", 5.5);
 		GADGET_PROPERTY(oversamplingFactorProperty, float, "Oversmapling factor", 2);
 		GADGET_PROPERTY(iterate, bool, "Iterate bool", false);
+		GADGET_PROPERTY(calcDcw, bool, "Iterate for DCW bool", false);
 		GADGET_PROPERTY(iteration_max, int, "Maximum Iterations", 10);
 		GADGET_PROPERTY(iteration_tol, float, "Iteratation Tolerance", 1e-3);
-
+                GADGET_PROPERTY(is_inout, bool, "spiral inout filter", false);
+ 
 		/**
 			Storage for the properties above
 		*/
@@ -113,5 +115,7 @@ namespace Gadgetron{
 		std::tuple<hoNDArray<std::complex<float>>, hoNDArray<std::complex<float>>> computeCsm(
 			IsmrmrdDataBuffered *ref_
 		);
+
+		boost::shared_ptr<hoNDArray<float>> IterateForDcw( hoNDArray<floatd2> *traj, hoNDArray<float> *dcw, size_t samples, size_t Ninterleaves );
 	};
 }

@@ -30,7 +30,7 @@ NFFT_iterate_body( typename reald<REAL,D>::Type alpha, typename reald<REAL,D>::T
 		   unsigned int double_warp_size_power, REAL half_W, REAL one_over_W, vector_td<REAL,D> matrix_size_os_real, 
 		   unsigned int frame, unsigned int num_frames,
 		   unsigned int num_samples_per_batch, unsigned int sample_idx_in_batch, 
-		   vector_td<REAL,D> sample_position, vector_td<int,D> grid_position )
+		   vector_td<REAL,D> sample_position, vector_td<int,D> grid_position, bool sqrt_kernel )
 {
   // Calculate the distance between current sample and the grid cell
   vector_td<REAL,D> grid_position_real = vector_td<REAL,D>(grid_position);
@@ -42,8 +42,8 @@ NFFT_iterate_body( typename reald<REAL,D>::Type alpha, typename reald<REAL,D>::T
     return;
 
   // Compute convolution weight.
-  const REAL weight = KaiserBessel<REAL>( delta, matrix_size_os_real, one_over_W, beta );
-  
+  REAL weight= KaiserBessel<REAL>( delta, matrix_size_os_real, one_over_W, beta ); 
+  if(sqrt_kernel){ weight = sqrt(weight); }
   // Safety measure. We have occationally observed a NaN from the KaiserBessel computation
   if( !isfinite(weight) )
     return;
@@ -78,7 +78,7 @@ NFFT_iterate( typename reald<REAL,1>::Type alpha, typename reald<REAL,1>::Type b
 	      vector_td<REAL,1> matrix_size_os_real, 
 	      unsigned int frame, unsigned int num_frames, 
 	      unsigned int num_samples_per_batch, unsigned int sample_idx_in_batch, 
-	      vector_td<REAL,1> sample_position, vector_td<int,1> lower_limit, vector_td<int,1> upper_limit )
+	      vector_td<REAL,1> sample_position, vector_td<int,1> lower_limit, vector_td<int,1> upper_limit, bool sqrt_kernel )
 {
   // Iterate through all grid cells influencing the corresponding sample
   for( int x = lower_limit.vec[0]; x<=upper_limit.vec[0]; x++ ){
@@ -87,7 +87,7 @@ NFFT_iterate( typename reald<REAL,1>::Type alpha, typename reald<REAL,1>::Type b
     
     NFFT_iterate_body<REAL,1>( alpha, beta, W, matrix_size_os, number_of_batches, samples, image, double_warp_size_power, 
 			       half_W, one_over_W, matrix_size_os_real, frame, num_frames,
-			       num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position );
+			       num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position, sqrt_kernel );
   }
 }
 
@@ -103,7 +103,7 @@ NFFT_iterate( typename reald<REAL,2>::Type alpha, typename reald<REAL,2>::Type b
 	      vector_td<REAL,2> matrix_size_os_real, 
 	      unsigned int frame, unsigned int num_frames, 
 	      unsigned int num_samples_per_batch, unsigned int sample_idx_in_batch, 
-	      vector_td<REAL,2> sample_position, vector_td<int,2> lower_limit, vector_td<int,2> upper_limit )
+	      vector_td<REAL,2> sample_position, vector_td<int,2> lower_limit, vector_td<int,2> upper_limit, bool sqrt_kernel )
 {
   // Iterate through all grid cells influencing the corresponding sample
   for( int y = lower_limit.vec[1]; y<=upper_limit.vec[1]; y++ ){
@@ -113,7 +113,7 @@ NFFT_iterate( typename reald<REAL,2>::Type alpha, typename reald<REAL,2>::Type b
       
       NFFT_iterate_body<REAL,2>( alpha, beta, W, matrix_size_os, number_of_batches, samples, image, double_warp_size_power, 
 				 half_W, one_over_W, matrix_size_os_real, frame, num_frames,
-				 num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position );
+				 num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position, sqrt_kernel );
     }
   }
 }
@@ -130,7 +130,7 @@ NFFT_iterate( typename reald<REAL,3>::Type alpha, typename reald<REAL,3>::Type b
 	      vector_td<REAL,3> matrix_size_os_real, 
 	      unsigned int frame, unsigned int num_frames, 	      
 	      unsigned int num_samples_per_batch, unsigned int sample_idx_in_batch, 
-	      vector_td<REAL,3> sample_position, vector_td<int,3> lower_limit, vector_td<int,3> upper_limit )
+	      vector_td<REAL,3> sample_position, vector_td<int,3> lower_limit, vector_td<int,3> upper_limit, bool sqrt_kernel )
 {
   // Iterate through all grid cells influencing the corresponding sample
   for( int z = lower_limit.vec[2]; z<=upper_limit.vec[2]; z++ ){
@@ -141,7 +141,7 @@ NFFT_iterate( typename reald<REAL,3>::Type alpha, typename reald<REAL,3>::Type b
 	
 	NFFT_iterate_body<REAL,3>( alpha, beta, W, matrix_size_os, number_of_batches, samples, image, double_warp_size_power, 
 				   half_W, one_over_W, matrix_size_os_real, frame, num_frames,
-				   num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position );
+				   num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position, sqrt_kernel );
       }
     }
   }
@@ -159,7 +159,7 @@ NFFT_iterate( typename reald<REAL,4>::Type alpha, typename reald<REAL,4>::Type b
 	      vector_td<REAL,4> matrix_size_os_real, 
 	      unsigned int frame, unsigned int num_frames, 
 	      unsigned int num_samples_per_batch, unsigned int sample_idx_in_batch, 
-	      vector_td<REAL,4> sample_position, vector_td<int,4> lower_limit, vector_td<int,4> upper_limit )
+	      vector_td<REAL,4> sample_position, vector_td<int,4> lower_limit, vector_td<int,4> upper_limit, bool sqrt_kernel )
 {
   // Iterate through all grid cells influencing the corresponding sample
   for( int w = lower_limit.vec[3]; w<=upper_limit.vec[3]; w++ ){
@@ -171,7 +171,7 @@ NFFT_iterate( typename reald<REAL,4>::Type alpha, typename reald<REAL,4>::Type b
 	  
 	  NFFT_iterate_body<REAL,4>( alpha, beta, W, matrix_size_os, number_of_batches, samples, image, double_warp_size_power, 
 				     half_W, one_over_W, matrix_size_os_real, frame, num_frames,
-				     num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position );
+				     num_samples_per_batch, sample_idx_in_batch, sample_position, grid_position, sqrt_kernel );
 	}
       }
     }
@@ -188,7 +188,7 @@ NFFT_H_atomic_convolve_kernel( typename reald<REAL,D>::Type alpha, typename real
 			       unsigned int num_samples_per_frame, unsigned int num_batches, 
 			       const vector_td<REAL,D> * __restrict__ traj_positions, const complext<REAL> * __restrict__ samples, complext<REAL> * __restrict__ image,
 			       unsigned int double_warp_size_power, REAL half_W, REAL one_over_W,
-			       vector_td<REAL,D> matrix_size_os_real )
+			       vector_td<REAL,D> matrix_size_os_real, bool sqrt_kernel = false )
 {
   
   // A runtime check will prevent this kernel from being run for compute models 1.x.
@@ -222,6 +222,6 @@ NFFT_H_atomic_convolve_kernel( typename reald<REAL,D>::Type alpha, typename real
   NFFT_iterate<REAL>( alpha, beta, W, matrix_size_os, num_batches, samples, image, double_warp_size_power, 
 		      half_W, one_over_W, matrix_size_os_real, 
 		      frame, num_frames, num_samples_per_batch, sample_idx_in_batch, 
-		      sample_position, lower_limit, upper_limit );
+		      sample_position, lower_limit, upper_limit, sqrt_kernel );
 #endif
 }

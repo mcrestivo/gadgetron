@@ -43,7 +43,7 @@ NFFT_H_convolve( typename reald<REAL,D>::Type alpha, typename reald<REAL,D>::Typ
 		 const vector_td<REAL,D> * __restrict__ traj_positions, complext<REAL>*samples, const unsigned int * __restrict__ tuples_last,
 		 const unsigned int * __restrict__ bucket_begin, const unsigned int * __restrict__ bucket_end,
 		 unsigned int double_warp_size_power, REAL half_W, REAL one_over_W, vector_td<REAL,D> matrix_size_os_real, 
-		 unsigned int globalThreadId, vector_td<unsigned int,D> domainPos, unsigned int sharedMemFirstCellIdx )
+		 unsigned int globalThreadId, vector_td<unsigned int,D> domainPos, unsigned int sharedMemFirstCellIdx, bool sqrt_kernel )
 {
 
   REAL *shared_mem = (REAL*) _shared_mem;
@@ -71,6 +71,7 @@ NFFT_H_convolve( typename reald<REAL,D>::Type alpha, typename reald<REAL,D>::Typ
       
       // Compute convolution weights
       float weight = KaiserBessel<REAL>( delta, matrix_size_os_real, one_over_W, beta );
+      if(sqrt_kernel){ weight = sqrt(weight); }
       
       // Safety measure
       if( !isfinite(weight) )
@@ -98,7 +99,7 @@ NFFT_H_convolve_kernel( typename reald<REAL,D>::Type alpha, typename reald<REAL,
 			const vector_td<REAL,D> * __restrict__ traj_positions, complext<REAL>* __restrict__ image, complext<REAL>* __restrict__ samples,
 			const unsigned int * __restrict__ tuples_last, const unsigned int * __restrict__ bucket_begin, const unsigned int * __restrict__ bucket_end,
 			unsigned int double_warp_size_power,
-			REAL half_W, REAL one_over_W, vector_td<REAL,D> matrix_size_os_real )
+			REAL half_W, REAL one_over_W, vector_td<REAL,D> matrix_size_os_real, bool sqrt_kernel = false )
 {
   
   // Global thread index
@@ -135,7 +136,7 @@ NFFT_H_convolve_kernel( typename reald<REAL,D>::Type alpha, typename reald<REAL,
   NFFT_H_convolve<REAL, D>
     ( alpha, beta, W, number_of_samples, number_of_batches, number_of_domains,
       traj_positions, samples, tuples_last, bucket_begin, bucket_end,
-      double_warp_size_power, half_W, one_over_W,  matrix_size_os_real, index, domainPos, sharedMemFirstCellIdx );
+      double_warp_size_power, half_W, one_over_W,  matrix_size_os_real, index, domainPos, sharedMemFirstCellIdx, sqrt_kernel );
   
   // Output k-space image to global memory
   NFFT_H_output<REAL>( number_of_batches, image, double_warp_size_power, number_of_domains, index, sharedMemFirstCellIdx );

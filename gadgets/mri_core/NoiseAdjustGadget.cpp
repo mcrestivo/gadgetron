@@ -331,7 +331,8 @@ namespace Gadgetron {
             GDEBUG("write out the noise dependency file : %s\n", filename.c_str());
             outfile.write(reinterpret_cast<char*>(&xml_length), 4);
             outfile.write(xml_str.c_str(), xml_length);
-            outfile.write(reinterpret_cast<char*>(&noise_dwell_time_us_), sizeof(float));
+            //outfile.write(reinterpret_cast<char*>(&noise_dwell_time_us_), sizeof(float));//acquisition_dwell_time_us_
+	    outfile.write(reinterpret_cast<char*>(&acquisition_dwell_time_us_), sizeof(float));//acquisition_dwell_time_us_
             outfile.write(reinterpret_cast<char*>(&len), sizeof(size_t));
             outfile.write(buf, len);
             outfile.close();
